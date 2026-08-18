@@ -15,7 +15,7 @@
   <rect width="1400" height="560" fill="url(#bg)"/>
   <rect width="1400" height="560" fill="url(#grain)"/>
   <path d="M0 520 C 220 480, 380 540, 640 500 C 900 460, 1100 530, 1400 490 V560 H0 Z" fill="#1a1712"/>
-  <text x="80" y="78" fill="#d4a24c" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" letter-spacing="6">BENCH V6.1 · XHIGH · 55–145</text>
+  <text x="80" y="78" fill="#d4a24c" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" letter-spacing="6">BENCH V7 · XHIGH · 55–145</text>
   <text x="76" y="178" fill="#f3efe4" font-family="Georgia, 'Source Serif 4', serif" font-size="92" font-weight="700">IQBench</text>
   <text x="80" y="232" fill="#c4b8a4" font-family="Georgia, 'Noto Serif SC', serif" font-size="28">模型智商测评台</text>
   <text x="80" y="292" fill="#9a9183" font-family="Georgia, serif" font-size="20">对一半是 100。参数化题、最坏保证、鹈鹕骑车 SVG。</text>
