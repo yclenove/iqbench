@@ -60,6 +60,7 @@ export type BenchRun = {
   id: string;
   createdAt: string;
   host: string;
+  hostPublic?: boolean;
   keyFp: string;
   keyHint: string;
   benchVer: number;
@@ -72,6 +73,49 @@ export function hostOf(baseUrl: string) {
     return new URL(baseUrl).host || baseUrl || "unknown";
   } catch {
     return baseUrl || "unknown";
+  }
+}
+
+const LS_HOST_PUB = "iqbench_host_pub";
+
+export function maskHost(host: string) {
+  const parts = (host || "").split(".").filter(Boolean);
+  if (parts.length < 2) return "***";
+  if (parts.length === 2) return `${parts[0].slice(0, 2)}***.${parts[1]}`;
+  return `${parts[0]}.***.${parts[parts.length - 1]}`;
+}
+
+export function publishHost(host: string, hostPublic: boolean) {
+  if (!host) return "";
+  return hostPublic ? host : maskHost(host);
+}
+
+export function displayHost(host: string, hostPublic?: boolean) {
+  if (!host) return "";
+  if (host.includes("***")) return host;
+  if (hostPublic === true) return host;
+  return maskHost(host);
+}
+
+export function loadHostPublic(host: string) {
+  if (!host) return false;
+  try {
+    const map = JSON.parse(localStorage.getItem(LS_HOST_PUB) || "{}") as Record<string, boolean>;
+    if (Object.prototype.hasOwnProperty.call(map, host)) return Boolean(map[host]);
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+export function saveHostPublicPref(host: string, on: boolean) {
+  if (!host) return;
+  try {
+    const map = JSON.parse(localStorage.getItem(LS_HOST_PUB) || "{}") as Record<string, boolean>;
+    map[host] = on;
+    localStorage.setItem(LS_HOST_PUB, JSON.stringify(map));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -165,11 +209,15 @@ export function makeRun(
   baseUrl: string,
   key: string,
   results: Parameters<typeof compactResults>[0],
+  opts?: { hostPublic?: boolean },
 ): BenchRun {
+  const raw = hostOf(baseUrl);
+  const hostPublic = Boolean(opts?.hostPublic);
   return {
     id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
-    host: hostOf(baseUrl),
+    host: publishHost(raw, hostPublic),
+    hostPublic,
     keyFp: keyFp(key),
     keyHint: keyHint(key),
     benchVer: BENCH_VER,
@@ -295,7 +343,8 @@ export function channelBoard(runs: BenchRun[]): ChannelRow[] {
   >();
   for (const run of runs) {
     if (run.benchVer !== BENCH_VER) continue;
-    const rec = map.get(run.host) ?? {
+    const host = displayHost(run.host, run.hostPublic);
+    const rec = map.get(host) ?? {
       runs: 0,
       models: new Set<string>(),
       iqs: [] as number[],
@@ -318,7 +367,7 @@ export function channelBoard(runs: BenchRun[]): ChannelRow[] {
       if (m.probe?.juice.value != null) rec.juice = true;
       if (m.baseline?.suspect) rec.dumb = true;
     }
-    map.set(run.host, rec);
+    map.set(host, rec);
   }
   return [...map.entries()]
     .map(([host, r]) => ({

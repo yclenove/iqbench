@@ -1,7 +1,7 @@
 import { MAX_SCORE, QUESTIONS, UNITS, modelIq } from "./questions";
 import { extractSvg, shortFail } from "./judge";
 import { freshnessLabel, juiceLabel, probeLine, type ProbeResult } from "./probes";
-import { baselineLine, type Baseline } from "./bench-store";
+import { baselineLine, displayHost, type Baseline } from "./bench-store";
 
 export type ItemResult = {
   ok: boolean;
@@ -83,7 +83,7 @@ function dimStats(results: Record<string, ModelResult>) {
 
 export function buildReportHtml(
   results: Record<string, ModelResult>,
-  meta: { baseUrl: string },
+  meta: { baseUrl: string; hostPublic?: boolean },
 ) {
   const models = Object.keys(results).sort((a, b) => {
     const ia = results[a].iq ?? modelIq(results[a].items).iq;
@@ -92,7 +92,7 @@ export function buildReportHtml(
   });
   const now = new Date();
   const generatedAt = now.toLocaleString("zh-CN", { hour12: false });
-  const host = hostOf(meta.baseUrl);
+  const host = displayHost(hostOf(meta.baseUrl), meta.hostPublic);
   const dims = dimStats(results);
   const avg = models.length
     ? models.reduce((s, m) => s + results[m].total, 0) / models.length

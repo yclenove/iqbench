@@ -1,6 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { History, Trophy, Trash2 } from "lucide-react";
 import {
+  displayHost,
   type BenchRun,
   type BoardRow,
   type ChannelRow,
@@ -154,7 +155,7 @@ export function BenchArchive({
                   </p>
                   <p className="truncate text-xs text-muted">
                     {lab.topScore} · {lab.topName}
-                    {run.host ? ` · ${run.host}` : ""}
+                    {run.host ? ` · ${displayHost(run.host, run.hostPublic)}` : ""}
                   </p>
                 </button>
                 <button

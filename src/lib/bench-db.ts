@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { isAdminUser } from "@/lib/admin";
-import { BENCH_VER, type BenchRun } from "./bench-store";
+import { BENCH_VER, publishHost, type BenchRun } from "./bench-store";
 
 function asRun(payload: unknown): BenchRun | null {
   const obj = typeof payload === "string" ? safeParse(payload) : payload;
@@ -26,12 +26,13 @@ export const saveCloudRun = createServerFn({ method: "POST" })
   .handler(async ({ context, data: run }) => {
     if (run.benchVer !== BENCH_VER) return { ok: false as const };
     const sql = await getSql();
-    const safe: BenchRun = { ...run, keyHint: "已隐藏" };
+    const host = publishHost(run.host, run.hostPublic === true);
+    const safe: BenchRun = { ...run, host, keyHint: "已隐藏", hostPublic: run.hostPublic === true };
     await sql.query(
       `insert into bench_runs (id, user_id, host, key_fp, bench_ver, payload)
        values ($1, $2, $3, $4, $5, $6::jsonb)
        on conflict (id) do nothing`,
-      [run.id, context.userId, run.host, run.keyFp, run.benchVer, JSON.stringify(safe)],
+      [run.id, context.userId, host, run.keyFp, run.benchVer, JSON.stringify(safe)],
     );
     for (const m of run.models) {
       await sql.query(
@@ -43,7 +44,7 @@ export const saveCloudRun = createServerFn({ method: "POST" })
         [
           `${run.id}:${m.id}`,
           context.userId,
-          run.host,
+          host,
           m.id,
           m.iq ?? 70,
           m.total,
@@ -144,7 +145,7 @@ export const publicModelBoard = createServerFn({ method: "GET" }).handler(async 
 
 export const publicChannelBoard = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
-  return sql<PublicChannelRow>`
+  const rows = await sql<PublicChannelRow>`
     select host,
            count(*)::int as runs,
            count(distinct model)::int as models,
@@ -156,8 +157,26 @@ export const publicChannelBoard = createServerFn({ method: "GET" }).handler(asyn
     from bench_public_scores
     group by host
     order by avg_iq desc, best_iq desc
-    limit 50
+    limit 80
   `;
+  const map = new Map<string, PublicChannelRow>();
+  for (const r of rows) {
+    const host = r.host;
+    const prev = map.get(host);
+    if (!prev) {
+      map.set(host, { ...r, host });
+      continue;
+    }
+    const nextRuns = prev.runs + r.runs;
+    prev.avg_iq = Math.round((prev.avg_iq * prev.runs + r.avg_iq * r.runs) / Math.max(1, nextRuns));
+    prev.runs = nextRuns;
+    prev.models += r.models;
+    prev.best_iq = Math.max(prev.best_iq, r.best_iq);
+    prev.web_suspect = prev.web_suspect || r.web_suspect;
+    prev.juice_seen = prev.juice_seen || r.juice_seen;
+    prev.iq_suspect = prev.iq_suspect || r.iq_suspect;
+  }
+  return [...map.values()].sort((a, b) => b.avg_iq - a.avg_iq || b.best_iq - a.best_iq).slice(0, 50);
 });
 
 export const deleteCloudRun = createServerFn({ method: "POST" })

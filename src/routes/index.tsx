@@ -23,7 +23,10 @@ import {
   hostOf,
   keyFp,
   keyHint,
+  loadHostPublic,
   makeRun,
+  maskHost,
+  saveHostPublicPref,
   saveRun,
   wipeLegacy,
   loadRuns,
@@ -113,6 +116,7 @@ function Home() {
   const [rememberKey, setRememberKey] = useState(false);
   const [workers, setWorkers] = useState(3);
   const [probeOn, setProbeOn] = useState(true);
+  const [hostPublic, setHostPublic] = useState(false);
   const [models, setModels] = useState<ModelOpt[]>([]);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState("就绪");
@@ -137,10 +141,12 @@ function Home() {
         base?: string;
         workers?: number;
         probe?: boolean;
+        hostPublic?: boolean;
       };
       if (c.base) setBaseUrl(c.base);
       if (c.workers) setWorkers(Math.min(4, Math.max(1, c.workers)));
       if (typeof c.probe === "boolean") setProbeOn(c.probe);
+      if (typeof c.hostPublic === "boolean") setHostPublic(c.hostPublic);
       const sessionKey = sessionStorage.getItem("iqbench_key");
       if (sessionKey) {
         setApiKey(sessionKey);
@@ -199,6 +205,12 @@ function Home() {
   }, [user]);
 
   useEffect(() => {
+    const h = hostOf(baseUrl);
+    if (!h) return;
+    setHostPublic(loadHostPublic(h));
+  }, [baseUrl]);
+
+  useEffect(() => {
     if (logEl.current) logEl.current.scrollTop = logEl.current.scrollHeight;
   }, [log]);
 
@@ -206,6 +218,7 @@ function Home() {
 
   const saveCfg = () => {
     localStorage.setItem("iqbench_cfg", JSON.stringify({ base: baseUrl, workers, probe: probeOn }));
+    saveHostPublicPref(hostOf(baseUrl), hostPublic);
     if (rememberKey && apiKey) sessionStorage.setItem("iqbench_key", apiKey);
     else sessionStorage.removeItem("iqbench_key");
   };
@@ -472,7 +485,7 @@ function Home() {
     }
 
     if (Object.keys(nextResults).length) {
-      const finished = makeRun(baseUrl, apiKey, nextResults);
+      const finished = makeRun(baseUrl, apiKey, nextResults, { hostPublic });
       saveRun(finished);
       setHistTick((n) => n + 1);
       if (user) {
@@ -505,12 +518,12 @@ function Home() {
       setStatus("先跑完测评再导出报告");
       return;
     }
-    setReportHtml(buildReportHtml(results, { baseUrl }));
+    setReportHtml(buildReportHtml(results, { baseUrl, hostPublic }));
   }
 
   function saveReport() {
     if (!Object.keys(results).length) return;
-    downloadReport(reportHtml ?? buildReportHtml(results, { baseUrl }));
+    downloadReport(reportHtml ?? buildReportHtml(results, { baseUrl, hostPublic }));
     append("已下载 HTML 报告");
   }
 
@@ -615,6 +628,26 @@ function Home() {
               />
             </label>
           </div>
+          <label className="mt-3 inline-flex items-start gap-2 text-[13px] leading-5 text-muted">
+            <input
+              type="checkbox"
+              className="mt-0.5 shrink-0"
+              checked={hostPublic}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setHostPublic(on);
+                saveHostPublicPref(hostOf(baseUrl), on);
+              }}
+            />
+            <span>
+              上榜公开我的渠道地址
+              <span className="ml-1 text-faint">
+                {hostPublic
+                  ? `榜单将显示 ${hostOf(baseUrl) || "完整主机名"}`
+                  : `榜单脱敏为 ${baseUrl ? maskHost(hostOf(baseUrl)) : "g2.***.vip"}（按渠道记住）`}
+              </span>
+            </span>
+          </label>
           <div className="mt-4 flex flex-col gap-3.5 text-[13px] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-3">
             <label className="inline-flex items-start gap-2 leading-5">
               <input
