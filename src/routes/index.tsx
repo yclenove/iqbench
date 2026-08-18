@@ -526,7 +526,7 @@ function Home() {
   const fresh = modelNames.length === 0 && !running;
 
   return (
-    <main className="min-h-screen bg-bg text-fg">
+    <main className="min-h-screen text-fg">
       <AppHeader page="home" />
 
       <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-16 sm:px-6">

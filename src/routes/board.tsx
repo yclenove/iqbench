@@ -22,7 +22,7 @@ function Board() {
   };
 
   return (
-    <main className="min-h-screen bg-bg text-fg">
+    <main className="min-h-screen text-fg">
       <AppHeader page="board" />
       <div className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
         <div className="mb-5 mt-6">

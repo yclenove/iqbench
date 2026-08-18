@@ -39,7 +39,7 @@ function Login() {
   };
 
   return (
-    <main className="grid min-h-screen place-items-center bg-bg px-6 text-fg">
+    <main className="grid min-h-screen place-items-center px-6 text-fg">
       <div className="card w-full max-w-sm space-y-5 p-6">
         <div className="flex flex-col items-center text-center">
           <img src="/favicon.svg" alt="" className="size-14 rounded-2xl" />
