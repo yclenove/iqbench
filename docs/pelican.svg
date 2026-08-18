@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="鹈鹕骑车">
+  <rect width="400" height="300" fill="#d9eefc"/>
+  <rect y="248" width="400" height="52" fill="#6fa86a"/>
+  <rect y="248" width="400" height="6" fill="#5a9356"/>
+  <!-- bike frame -->
+  <g fill="none" stroke="#2a3a38" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M118 214 L168 150 L248 150 L278 214"/>
+    <path d="M168 150 L148 118"/>
+    <path d="M210 150 L210 188 L188 210"/>
+    <path d="M248 150 L268 118 L292 118"/>
+  </g>
+  <!-- wheels -->
+  <g fill="#1c1c1c" stroke="#222" stroke-width="3">
+    <circle cx="118" cy="214" r="38"/>
+    <circle cx="278" cy="214" r="38"/>
+  </g>
+  <g fill="none" stroke="#8a8a8a" stroke-width="1.4">
+    <circle cx="118" cy="214" r="28"/>
+    <circle cx="278" cy="214" r="28"/>
+    <path d="M118 186 V242 M90 214 H146 M98 194 L138 234 M98 234 L138 194"/>
+    <path d="M278 186 V242 M250 214 H306 M258 194 L298 234 M258 234 L298 194"/>
+  </g>
+  <circle cx="118" cy="214" r="6" fill="#d4a24c"/>
+  <circle cx="278" cy="214" r="6" fill="#d4a24c"/>
+  <!-- pedals -->
+  <g>
+    <ellipse cx="198" cy="168" rx="9" ry="13" fill="#e07a3a" transform="rotate(-18 198 168)"/>
+    <ellipse cx="188" cy="226" rx="9" ry="13" fill="#e07a3a" transform="rotate(22 188 226)"/>
+  </g>
+  <!-- pelican -->
+  <ellipse cx="168" cy="118" rx="42" ry="30" fill="#f4efe4" stroke="#2a3a38" stroke-width="2"/>
+  <path d="M140 104 q18 -18 40 -8 q-6 14 -22 16 q-12 1 -18 -8z" fill="#e8e2c8" stroke="#2a3a38" stroke-width="1.4"/>
+  <circle cx="208" cy="98" r="20" fill="#f4efe4" stroke="#2a3a38" stroke-width="2"/>
+  <ellipse cx="248" cy="102" rx="36" ry="11" fill="#e8a05a" stroke="#2a3a38" stroke-width="1.6"/>
+  <path d="M218 108 q28 22 58 10 q-8 16 -32 16 q-22 0 -26 -26z" fill="#f3d98a" stroke="#2a3a38" stroke-width="1.4"/>
+  <circle cx="214" cy="94" r="2.4" fill="#1a1712"/>
+  <path d="M148 118 C 158 150, 162 168, 168 150" fill="none" stroke="#2a3a38" stroke-width="3"/>
+</svg>
