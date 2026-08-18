@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img alt="bench" src="https://img.shields.io/badge/bench-v6.1-d4a24c?style=flat-square">
+  <img alt="bench" src="https://img.shields.io/badge/bench-v6.2-d4a24c?style=flat-square">
   <img alt="iq" src="https://img.shields.io/badge/IQ-55–145-1a1712?style=flat-square">
   <img alt="units" src="https://img.shields.io/badge/units-18-241f18?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/stack-TanStack%20Start-3d352b?style=flat-square">
@@ -34,17 +34,17 @@
 
 | 维度 | 权重 | 单元 | 在查什么 |
 | --- | ---: | --- | --- |
-| 认知反射 | 1.5 | Q1–Q3 | 会不会被第一直觉带走 |
-| 多步科学 | 2.5 | Q4–Q5 | 色盲遗传、阿基米德排水 |
+| 认知反射 | 1.0 | Q1–Q3 | 会不会被第一直觉带走 |
+| 多步科学 | 2.0 | Q4–Q5 | 色盲遗传、阿基米德排水 |
 | 最坏保证 | 2.5 | Q6–Q7 | 经典糖果题 + 换表参数化 |
 | 抗记忆 | 2.5 | Q8–Q9 | 换数字后还会不会默写 21 / 0.05 |
 | 模式归纳 | 2.0 | Q10–Q11 | 数列、字母类比 |
 | 形式逻辑 | 1.5 | Q12 | 骑士与无赖 |
 | 约束满足 | 1.5 | Q13 | 五人排队 |
-| 数量 | 1.5 | Q14 | 注排水 |
-| 注意 | 1.0 | Q15 | 数字母（不用 strawberry） |
-| 空间作图 | 1.5 | Q16a | 鹈鹕、脚在脚踏上、轮子转 |
-| 指令遵循 | 1.0 | Q16b Q17 | id / viewBox / 严格 JSON |
+| 数量 | 1.2 | Q14 | 注排水 |
+| 注意 | 0.8 | Q15 | 数字母（不用 strawberry） |
+| 空间作图 | 1.0 | Q16a | 鹈鹕、脚在脚踏上、轮子转 |
+| 指令遵循 | 0.6 | Q16b Q17 | id / viewBox / 严格 JSON |
 
 18 个计分单元，卷面 163。完整规则在 [iqbench-spec.md](./iqbench-spec.md)。
 

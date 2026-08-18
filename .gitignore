@@ -15,7 +15,8 @@ dist/
 *.pem
 *.key
 credentials.json
-secrets/
+src/lib/linuxdo.secrets.ts
+
 
 # local / preview
 .project_id

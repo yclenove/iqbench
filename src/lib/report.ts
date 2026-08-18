@@ -329,7 +329,7 @@ export function buildReportHtml(
     <header class="cover">
       <div class="kicker">LLM IQ Bench · Confidential lab note</div>
       <h1>模型智商测评报告</h1>
-      <p class="lede">bench v6。IQ = 100 + 90×(加权通过率−0.5)，对一半为 100，量程 55–145。差 <20 或置信区间重叠视为同档。半分（21 的 29、17 的 25）有卷面分但不进 IQ。速度只进卷面。</p>
+      <p class="lede">bench v6.2。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
       <div class="meta-row">
         <div><span>生成时间</span><b>${esc(generatedAt)}</b></div>
         <div><span>接口主机</span><b>${esc(host)}</b></div>

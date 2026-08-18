@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { isAdminUser } from "@/lib/admin";
 import { BENCH_VER, type BenchRun } from "./bench-store";
 
 function asRun(payload: unknown): BenchRun | null {
@@ -138,9 +139,22 @@ export const clearMyCloudRuns = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-export const wipePublicBoards = createServerFn({ method: "POST" }).handler(async () => {
-  const sql = await getSql();
-  await sql.query(`truncate table bench_public_scores`);
-  await sql.query(`delete from bench_runs`);
-  return { ok: true as const };
+export const whoamiAdmin = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSessionUser } = await import("@/lib/auth/verify.server");
+  const u = await getSessionUser();
+  return { signedIn: Boolean(u), admin: isAdminUser(u) };
 });
+
+export const wipePublicBoards = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { getSessionUser } = await import("@/lib/auth/verify.server");
+    const u = await getSessionUser();
+    if (!isAdminUser({ id: context.userId, email: u?.email })) {
+      throw new Error("无权清空公开榜");
+    }
+    const sql = await getSql();
+    await sql.query(`truncate table bench_public_scores`);
+    await sql.query(`delete from bench_runs`);
+    return { ok: true as const };
+  });

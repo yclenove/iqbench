@@ -16,6 +16,7 @@ import {
   deleteCloudRun,
   publicChannelBoard,
   publicModelBoard,
+  whoamiAdmin,
   wipePublicBoards,
   type PublicChannelRow,
   type PublicModelRow,
@@ -42,12 +43,16 @@ export function BenchArchive({
   const localChannels = channelBoard(runs);
   const [cloudModels, setCloudModels] = useState<PublicModelRow[]>([]);
   const [cloudChannels, setCloudChannels] = useState<PublicChannelRow[]>([]);
+  const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
     setRuns(loadRuns());
   }, [refresh]);
 
   useEffect(() => {
+    whoamiAdmin()
+      .then((s) => setAdmin(Boolean(s.admin)))
+      .catch(() => setAdmin(false));
     publicModelBoard()
       .then(setCloudModels)
       .catch(() => setCloudModels([]));
@@ -98,13 +103,15 @@ export function BenchArchive({
         >
           清空本机历史
         </button>
-        <button
-          type="button"
-          onClick={handleWipePublic}
-          className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-xs text-muted"
-        >
-          清空公开榜
-        </button>
+        {admin ? (
+          <button
+            type="button"
+            onClick={handleWipePublic}
+            className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-xs text-muted"
+          >
+            清空公开榜
+          </button>
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

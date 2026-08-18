@@ -401,7 +401,7 @@ function Home() {
       <header className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6 sm:py-6">
         <div className="min-w-0">
           <p className="font-mono text-[10px] tracking-[0.18em] text-primary uppercase sm:text-xs sm:tracking-[0.2em]">
-            思考 xhigh · bench v6 · 100=对一半
+            思考 xhigh · bench v6.2 · 100=对一半
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">模型智商测评台</h1>
           <p className="mt-2 max-w-xl text-sm text-muted">

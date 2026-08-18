@@ -13,6 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBenchChatRouteImport } from './routes/api/bench/chat'
+import { Route as ApiLinuxdoCallbackRouteImport } from './routes/api/linuxdo/callback'
+import { Route as ApiLinuxdoStartRouteImport } from './routes/api/linuxdo/start'
+import { Route as ApiLinuxdoStatusRouteImport } from './routes/api/linuxdo/status'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +37,39 @@ const ApiBenchChatRoute = ApiBenchChatRouteImport.update({
   path: '/api/bench/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLinuxdoCallbackRoute = ApiLinuxdoCallbackRouteImport.update({
+  id: '/api/linuxdo/callback',
+  path: '/api/linuxdo/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLinuxdoStartRoute = ApiLinuxdoStartRouteImport.update({
+  id: '/api/linuxdo/start',
+  path: '/api/linuxdo/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLinuxdoStatusRoute = ApiLinuxdoStatusRouteImport.update({
+  id: '/api/linuxdo/status',
+  path: '/api/linuxdo/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
+  '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
+  '/api/linuxdo/start': typeof ApiLinuxdoStartRoute
+  '/api/linuxdo/status': typeof ApiLinuxdoStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
+  '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
+  '/api/linuxdo/start': typeof ApiLinuxdoStartRoute
+  '/api/linuxdo/status': typeof ApiLinuxdoStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +77,38 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
+  '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
+  '/api/linuxdo/start': typeof ApiLinuxdoStartRoute
+  '/api/linuxdo/status': typeof ApiLinuxdoStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/api/auth/$' | '/api/bench/chat'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/api/auth/$'
+    | '/api/bench/chat'
+    | '/api/linuxdo/callback'
+    | '/api/linuxdo/start'
+    | '/api/linuxdo/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/api/auth/$' | '/api/bench/chat'
-  id: '__root__' | '/' | '/login' | '/api/auth/$' | '/api/bench/chat'
+  to:
+    | '/'
+    | '/login'
+    | '/api/auth/$'
+    | '/api/bench/chat'
+    | '/api/linuxdo/callback'
+    | '/api/linuxdo/start'
+    | '/api/linuxdo/status'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/api/auth/$'
+    | '/api/bench/chat'
+    | '/api/linuxdo/callback'
+    | '/api/linuxdo/start'
+    | '/api/linuxdo/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +116,9 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBenchChatRoute: typeof ApiBenchChatRoute
+  ApiLinuxdoCallbackRoute: typeof ApiLinuxdoCallbackRoute
+  ApiLinuxdoStartRoute: typeof ApiLinuxdoStartRoute
+  ApiLinuxdoStatusRoute: typeof ApiLinuxdoStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +151,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBenchChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/linuxdo/callback': {
+      id: '/api/linuxdo/callback'
+      path: '/api/linuxdo/callback'
+      fullPath: '/api/linuxdo/callback'
+      preLoaderRoute: typeof ApiLinuxdoCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/linuxdo/start': {
+      id: '/api/linuxdo/start'
+      path: '/api/linuxdo/start'
+      fullPath: '/api/linuxdo/start'
+      preLoaderRoute: typeof ApiLinuxdoStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/linuxdo/status': {
+      id: '/api/linuxdo/status'
+      path: '/api/linuxdo/status'
+      fullPath: '/api/linuxdo/status'
+      preLoaderRoute: typeof ApiLinuxdoStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +180,9 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBenchChatRoute: ApiBenchChatRoute,
+  ApiLinuxdoCallbackRoute: ApiLinuxdoCallbackRoute,
+  ApiLinuxdoStartRoute: ApiLinuxdoStartRoute,
+  ApiLinuxdoStatusRoute: ApiLinuxdoStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

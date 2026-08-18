@@ -223,10 +223,11 @@ export function gallerySrcDoc(html?: string, svg?: string) {
 }
 
 export function speedFactor(seconds: number, budget: number) {
-  if (seconds <= budget) return 1;
-  const over = seconds / Math.max(budget, 1);
-  if (over >= 3) return 0.55;
-  return Number((1 - (over - 1) * (0.45 / 2)).toFixed(3));
+  const cap = Math.max(budget, 1);
+  if (seconds <= cap * 1.5) return 1;
+  const over = seconds / cap;
+  if (over >= 3) return 0.88;
+  return Number((1 - (over - 1.5) * (0.12 / 1.5)).toFixed(3));
 }
 
 function isRasterCheat(markup: string) {
