@@ -4,7 +4,7 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { ViewportLock } from "@/components/viewport-lock";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "猛蹬";
+const APP_NAME = "猛蹬·145";
 const host = import.meta.env.VITE_PUBLIC_HOSTNAME;
 const ogImage = host ? `https://${host}/og.png` : "/og.png";
 
@@ -19,12 +19,12 @@ export const Route = createRootRoute({
       { name: "x5-orientation", content: "portrait" },
       { name: "screen-orientation", content: "portrait" },
       { title: APP_NAME },
-      { name: "description", content: "猛蹬 · 测模型会不会自己想" },
+      { name: "description", content: "猛蹬·145 · 我就看智商能低到什么程度" },
       { name: "apple-mobile-web-app-title", content: APP_NAME },
       { name: "theme-color", content: "#1a1712" },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:title", content: APP_NAME },
-      { property: "og:description", content: "测模型会不会自己想" },
+      { property: "og:description", content: "我就看智商能低到什么程度" },
       { property: "og:image", content: ogImage },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },

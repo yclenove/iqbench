@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="docs/hero.svg" alt="猛蹬 模型智商测评台" width="100%">
+  <img src="docs/hero.svg" alt="猛蹬·145" width="100%">
 </p>
 
 <p align="center">
-  <img src="docs/logo.svg" width="72" alt="猛蹬">
+  <img src="docs/logo.svg" width="72" alt="猛蹬·145">
 </p>
 
-<h1 align="center">猛蹬</h1>
+<h1 align="center">猛蹬·145</h1>
 
 <p align="center">
-  <strong>模型智商测评台</strong> · 测模型会不会自己想<br>
+  <strong>我就看智商能低到什么程度</strong><br>
   填地址和 Key，拉模型，一键并行。对一半是 100。
 </p>
 

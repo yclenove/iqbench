@@ -42,9 +42,9 @@ function Login() {
     <main className="grid min-h-screen place-items-center bg-bg px-6 text-fg">
       <div className="w-full max-w-sm space-y-5 rounded-xl border border-border bg-surface p-6">
         <div>
-          <p className="font-mono text-xs tracking-widest text-muted uppercase">猛蹬</p>
+          <p className="font-mono text-xs tracking-widest text-muted uppercase">猛蹬·145</p>
           <h1 className="mt-2 text-2xl font-semibold text-balance">登录测评台</h1>
-          <p className="mt-1 text-sm text-muted">测模型会不会自己想。不登录也能测，登录后成绩才上公开榜。</p>
+          <p className="mt-1 text-sm text-muted">我就看智商能低到什么程度。不登录也能测，登录后成绩才上公开榜。</p>
         </div>
         {authEnabled ? (
           <>

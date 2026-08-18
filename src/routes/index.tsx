@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
@@ -9,8 +9,8 @@ import {
   ListChecks,
   X,
 } from "lucide-react";
-import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { AppHeader } from "@/components/app-header";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
 import { extractHtml, extractSvg, gallerySrcDoc, judgeItem } from "@/lib/judge";
 import { listModels } from "@/lib/proxy";
@@ -25,6 +25,7 @@ import {
   makeRun,
   saveRun,
   wipeLegacy,
+  loadRuns,
   type Baseline,
   type BenchRun,
 } from "@/lib/bench-store";
@@ -43,7 +44,6 @@ import {
   type ProbeResult,
   type ProbeRow,
 } from "@/lib/probes";
-import { BenchArchive } from "@/components/bench-archive";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -74,21 +74,25 @@ type ModelResult = {
   baseline?: Baseline;
 };
 
-function AuthSlot() {
-  const { user, isPending } = useCurrentUserState();
-  if (isPending) {
-    return <div className="h-9 w-20 animate-pulse rounded-lg bg-surface-2" />;
+function mapRun(run: BenchRun): Record<string, ModelResult> {
+  const mapped: Record<string, ModelResult> = {};
+  for (const m of run.models) {
+    mapped[m.id] = {
+      total: m.total,
+      max: m.max,
+      seconds: m.seconds,
+      iq: m.iq ?? modelIq(m.items).iq,
+      probe: m.probe,
+      baseline: m.baseline,
+      items: Object.fromEntries(
+        Object.entries(m.items).map(([id, it]) => [
+          id,
+          { ...it, preview: "", svg: it.svg || "", html: it.html || "" },
+        ]),
+      ),
+    };
   }
-  return user ? (
-    <UserButton />
-  ) : (
-    <Link
-      to="/login"
-      className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-fg"
-    >
-      登录
-    </Link>
-  );
+  return mapped;
 }
 
 function Home() {
@@ -134,6 +138,20 @@ function Home() {
       /* ignore */
     }
     cfgReady.current = true;
+    try {
+      const openId = sessionStorage.getItem("iqbench_open_run");
+      if (openId) {
+        sessionStorage.removeItem("iqbench_open_run");
+        const hit = loadRuns().find((r) => r.id === openId);
+        if (hit) {
+          setViewing(hit);
+          setResults(mapRun(hit));
+          setStatus("已载入历史场次（只读对照）");
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   useEffect(() => {
@@ -505,29 +523,7 @@ function Home() {
 
   return (
     <main className="min-h-screen bg-bg text-fg">
-      <header className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6 sm:py-6">
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] tracking-[0.18em] text-primary uppercase sm:text-xs sm:tracking-[0.2em]">
-            思考 xhigh · bench v7 · 100=对一半
-          </p>
-          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            <img src="/favicon.svg" alt="" className="size-8 rounded-lg sm:size-9" />
-            猛蹬
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted">
-            模型智商测评台。测模型会不会自己想。Key 只留本标签页。
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <SignedIn>
-            <span className="hidden sm:inline text-xs text-muted">已登录 · 可上榜</span>
-          </SignedIn>
-          <SignedOut>
-            <span className="hidden sm:inline text-xs text-muted">游客 · 仅本机</span>
-          </SignedOut>
-          <AuthSlot />
-        </div>
-      </header>
+      <AppHeader page="home" />
 
       <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-16 sm:px-6">
         <section className="rounded-xl border border-border bg-surface p-4 sm:p-5">
@@ -984,44 +980,6 @@ function Home() {
             })
           )}
         </section>
-
-        <BenchArchive
-          host={hostOf(baseUrl)}
-          keyFp={keyFp(apiKey)}
-          signedIn={Boolean(user)}
-          refresh={histTick}
-          onChanged={() => {
-            setViewing(null);
-            setHistTick((n) => n + 1);
-          }}
-          onOpen={(run) => {
-            setViewing(run);
-            const mapped: Record<string, ModelResult> = {};
-            for (const m of run.models) {
-              mapped[m.id] = {
-                total: m.total,
-                max: m.max,
-                seconds: m.seconds,
-                iq: m.iq ?? modelIq(m.items).iq,
-                probe: m.probe,
-                baseline: m.baseline,
-                items: Object.fromEntries(
-                  Object.entries(m.items).map(([id, it]) => [
-                    id,
-                    {
-                      ...it,
-                      preview: "",
-                      svg: it.svg || "",
-                      html: it.html || "",
-                    },
-                  ]),
-                ),
-              };
-            }
-            setResults(mapped);
-            setStatus("已载入历史场次（只读对照）");
-          }}
-        />
       </div>
 
       {reportHtml ? (

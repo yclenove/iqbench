@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="猛蹬">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="猛蹬·145">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#14110d"/>
@@ -8,9 +8,9 @@
   <rect width="1200" height="630" fill="url(#bg)"/>
   <path d="M0 560 C 200 520, 380 580, 620 540 C 860 500, 1040 570, 1200 530 V630 H0 Z" fill="#1a1712"/>
   <text x="72" y="92" fill="#d4a24c" font-family="ui-monospace, Menlo, monospace" font-size="18" letter-spacing="5">BENCH V7 · XHIGH · 55–145</text>
-  <text x="68" y="230" fill="#f3efe4" font-family="Georgia, 'Noto Serif SC', serif" font-size="120" font-weight="700">猛蹬</text>
-  <text x="72" y="300" fill="#d4a24c" font-family="Georgia, 'Noto Serif SC', serif" font-size="32">测模型会不会自己想</text>
-  <text x="72" y="352" fill="#9a9183" font-family="Georgia, serif" font-size="22">模型智商测评台 · 对一半是 100</text>
+  <text x="68" y="220" fill="#f3efe4" font-family="Georgia, 'Noto Serif SC', serif" font-size="92" font-weight="700">猛蹬·145</text>
+  <text x="72" y="292" fill="#d4a24c" font-family="Georgia, 'Noto Serif SC', serif" font-size="28">我就看智商能低到什么程度</text>
+  <text x="72" y="344" fill="#9a9183" font-family="Georgia, serif" font-size="20">模型智商测评 · 上限 145 · 对一半是 100</text>
   <g transform="translate(720 120)">
     <rect x="0" y="0" width="400" height="300" rx="22" fill="#d9eefc"/>
     <rect x="0" y="248" width="400" height="52" fill="#6fa86a"/>

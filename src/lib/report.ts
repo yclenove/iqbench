@@ -244,7 +244,7 @@ export function buildReportHtml(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>猛蹬测评报告</title>
+<title>猛蹬·145 测评报告</title>
 <style>
   @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap");
   :root {
@@ -346,9 +346,9 @@ export function buildReportHtml(
       <button onclick="window.print()">打印 / 存为 PDF</button>
     </div>
     <header class="cover">
-      <div class="kicker">猛蹬 · 测模型会不会自己想</div>
-      <h1>猛蹬测评报告</h1>
-      <p class="lede">bench v7。测模型会不会自己想。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
+      <div class="kicker">猛蹬·145 · 我就看智商能低到什么程度</div>
+      <h1>猛蹬·145 测评报告</h1>
+      <p class="lede">bench v7。IQ = 100 + 90×(加权通过率−0.5)，上限 145。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
       <div class="meta-row">
         <div><span>生成时间</span><b>${esc(generatedAt)}</b></div>
         <div><span>接口主机</span><b>${esc(host)}</b></div>
@@ -397,7 +397,7 @@ export function buildReportHtml(
     ${bank}
 
     <footer>
-      猛蹬 · 主机 ${esc(host)} · ${esc(generatedAt)} · 评分在客户端完成，报告可离线打开。
+      猛蹬·145 · 主机 ${esc(host)} · ${esc(generatedAt)} · 评分在客户端完成，报告可离线打开。
     </footer>
   </div>
 </body>
