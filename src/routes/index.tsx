@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
   Download,
   FileText,
   Loader2,
@@ -232,6 +233,7 @@ function Home() {
   async function run() {
     if (!selected.length) {
       append("先拉模型并至少选一个");
+      setStatus("先拉模型并至少选一个");
       return;
     }
     saveCfg();
@@ -482,6 +484,7 @@ function Home() {
   function openReport() {
     if (!Object.keys(results).length) {
       append("先跑完测评再导出报告");
+      setStatus("先跑完测评再导出报告");
       return;
     }
     setReportHtml(buildReportHtml(results, { baseUrl }));
@@ -520,16 +523,38 @@ function Home() {
 
   const liveEntries = Object.entries(liveJobs);
   const ladderAge = useMemo(() => ladderAgeDays(), []);
+  const fresh = modelNames.length === 0 && !running;
 
   return (
     <main className="min-h-screen bg-bg text-fg">
       <AppHeader page="home" />
 
       <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-16 sm:px-6">
-        <section className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+        {fresh ? (
+          <section className="card mt-2 px-6 py-12 text-center sm:py-16">
+            <img src="/favicon.svg" alt="" className="mx-auto size-16 rounded-2xl" />
+            <p className="kicker mt-5">Ready · Bench v7</p>
+            <p className="mt-3 text-3xl font-bold tracking-tight">
+              大模型<span className="text-primary">能飞</span>
+            </p>
+            <p className="mx-auto mt-3 max-w-md text-sm text-muted">
+              18 个计分单元：最坏保证、抗背题、空间作图、指令遵循。填好下面的地址和 Key，拉模型，一键开测。
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 font-mono text-[11px] tracking-[0.15em] text-faint">
+              <span>01 填 KEY</span>
+              <span aria-hidden="true">→</span>
+              <span>02 拉模型</span>
+              <span aria-hidden="true">→</span>
+              <span>03 一键测评</span>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="card p-4 sm:p-5">
+          <p className="kicker mb-3">接入配置</p>
           <div className="form-grid grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1.5 block text-xs text-muted">API Base URL（到 /v1）</span>
+              <span className="mb-1.5 block text-[13px] text-muted">API Base URL（到 /v1）</span>
               <input
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
@@ -538,7 +563,7 @@ function Home() {
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-xs text-muted">API Key（不入库、不上报）</span>
+              <span className="mb-1.5 block text-[13px] text-muted">API Key（不入库、不上报）</span>
               <input
                 type="password"
                 autoComplete="off"
@@ -549,7 +574,7 @@ function Home() {
               />
             </label>
           </div>
-          <div className="mt-3 flex flex-col gap-3 text-xs text-muted sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="mt-4 flex flex-col gap-3.5 text-[13px] text-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-3">
             <label className="inline-flex items-start gap-2 leading-5">
               <input
                 type="checkbox"
@@ -561,17 +586,20 @@ function Home() {
             </label>
             <label className="inline-flex items-center gap-2">
               <span className="shrink-0">并行</span>
-              <select
-                value={workers}
-                onChange={(e) => setWorkers(Number(e.target.value))}
-                className="h-9 w-24 shrink-0 rounded-md border border-border bg-surface-2 px-2 text-fg"
-              >
-                {[1, 2, 3, 4].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 路
-                  </option>
-                ))}
-              </select>
+              <span className="relative inline-flex shrink-0 items-center">
+                <select
+                  value={workers}
+                  onChange={(e) => setWorkers(Number(e.target.value))}
+                  className="h-9 w-auto min-w-20 appearance-none rounded-md border border-border bg-surface-2 pl-3 pr-8 text-fg"
+                >
+                  {[1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n} 路
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-muted" />
+              </span>
             </label>
             <label className="inline-flex items-start gap-2 leading-5">
               <input
@@ -594,7 +622,7 @@ function Home() {
             <button
               type="button"
               onClick={fetchModels}
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface-2 px-2 text-sm font-medium sm:w-auto sm:px-4"
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface-2 px-2 text-sm font-medium transition-colors hover:border-primary sm:w-auto sm:px-4"
             >
               <ListChecks className="size-4 shrink-0" />
               拉取模型
@@ -602,7 +630,7 @@ function Home() {
             <button
               type="button"
               onClick={selectChat}
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm sm:w-auto sm:px-4"
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg px-2 text-sm text-muted transition-colors hover:text-fg sm:w-auto sm:px-3"
             >
               只选对话
             </button>
@@ -610,7 +638,7 @@ function Home() {
               type="button"
               disabled={running}
               onClick={run}
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg bg-primary px-2 text-sm font-semibold text-primary-fg disabled:opacity-60 sm:w-auto sm:px-4"
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg bg-primary px-2 text-sm font-semibold text-primary-fg transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-auto sm:px-5"
             >
               {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
               一键测评
@@ -623,37 +651,47 @@ function Home() {
                   abortRef.current?.abort();
                   append("停止请求已发出");
                 }}
-                className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm sm:w-auto sm:px-4"
+                className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-bad/50 px-2 text-sm text-bad transition-colors hover:border-bad sm:w-auto sm:px-4"
               >
                 <Square className="size-4" />
                 停止
               </button>
             ) : null}
+            <span className="hidden min-w-0 flex-1 items-center justify-end gap-2 text-right font-mono text-[11px] text-muted sm:inline-flex">
+              {running ? <span className="size-1.5 animate-pulse rounded-full bg-primary" /> : null}
+              <span className="min-w-0 break-all">
+                {status}
+                {status ? " · " : ""}
+                {keyHint(apiKey)} · {hostOf(baseUrl) || "未填主机"}
+              </span>
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/60 pt-3">
             <button
               type="button"
               onClick={openReport}
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg bg-primary px-2 text-sm font-semibold text-primary-fg sm:w-auto sm:px-4"
+              className="inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-primary"
             >
-              <FileText className="size-4" />
+              <FileText className="size-3.5" />
               导出报告
             </button>
             <a
               href="/iqbench-spec.md"
               download="iqbench-spec.md"
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm sm:w-auto sm:px-4"
+              className="inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-primary"
             >
-              <Download className="size-4" />
+              <Download className="size-3.5" />
               题库规格
             </a>
             <button
               type="button"
               onClick={exportJson}
-              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm sm:w-auto sm:px-4"
+              className="inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-primary"
             >
-              <Download className="size-4" />
+              <Download className="size-3.5" />
               导出 JSON
             </button>
-            <span className="min-w-0 break-all text-xs text-muted">
+            <span className="min-w-0 break-all font-mono text-[11px] text-muted sm:hidden">
               {status}
               {status ? " · " : ""}
               {keyHint(apiKey)} · {hostOf(baseUrl) || "未填主机"}
@@ -666,24 +704,31 @@ function Home() {
               models.map((m) => (
                 <label
                   key={m.id}
-                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs"
+                  className={`inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                    picked[m.id]
+                      ? "border-primary/70 bg-primary/10 text-fg"
+                      : "border-border bg-surface-2 text-muted hover:border-border-strong"
+                  }`}
                 >
                   <input
                     type="checkbox"
+                    className="sr-only"
                     checked={Boolean(picked[m.id])}
                     onChange={(e) => setPicked((p) => ({ ...p, [m.id]: e.target.checked }))}
                   />
                   <span className="max-w-[220px] truncate sm:max-w-none">{m.id}</span>
-                  <span className="text-muted">{m.kind}</span>
+                  <span className="text-faint">{m.kind}</span>
                 </label>
               ))
             )}
           </div>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[1fr_180px]">
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <p className="mb-2 text-xs text-muted">实时日志</p>
+        {fresh ? null : (
+          <>
+        <section className="grid gap-4 lg:grid-cols-[1fr_220px]">
+          <div className="card p-4">
+            <p className="kicker kicker-dim mb-2">实时日志</p>
             <pre
               ref={logEl}
               className="h-24 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-fg/80"
@@ -705,43 +750,46 @@ function Home() {
               </div>
             ) : null}
           </div>
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <p className="text-xs text-muted">相对智商指数</p>
-            <p className="mt-2 font-mono text-4xl font-semibold tabular-nums text-primary">
+          <div className="card p-4">
+            <p className="kicker kicker-dim">相对智商指数</p>
+            <p className="mt-1 font-serif text-5xl font-bold tabular-nums text-primary">
               {avgIq == null ? "—" : avgIq}
             </p>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 font-mono text-[11px] text-muted">
               {avg == null ? "尚未开始" : `均分 ${avg.toFixed(1)}/${MAX_SCORE} · IQ 55–145`}
             </p>
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <p className="mb-3 text-xs text-muted">能力维度得分率</p>
+        <section className="card p-4">
+          <p className="kicker kicker-dim mb-3">能力维度得分率</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {dimBars.map((d) => (
               <div key={d.id}>
                 <div className="mb-1 flex justify-between text-xs">
                   <span>{d.name}</span>
-                  <span className="tabular-nums text-muted">{d.pct}%</span>
+                  <span className="font-mono tabular-nums text-muted">{d.pct}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${d.pct}%` }} />
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary/70 to-primary-soft transition-[width] duration-500"
+                    style={{ width: `${d.pct}%` }}
+                  />
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <p className="mb-3 text-xs text-muted">
+        <section className="card p-4">
+          <p className="kicker mb-3">
             成绩表
             {viewing ? (
-              <span className="ml-2 text-primary">
+              <span className="ml-2 normal-case tracking-normal text-muted">
                 历史 {new Date(viewing.createdAt).toLocaleString("zh-CN", { hour12: false })}
                 <button
                   type="button"
-                  className="ml-2 underline"
+                  className="ml-2 text-primary underline"
                   onClick={() => {
                     setViewing(null);
                     setResults({});
@@ -750,9 +798,7 @@ function Home() {
                   回到本场
                 </button>
               </span>
-            ) : (
-              " · 仅当前这把 Key 的本场"
-            )}
+            ) : null}
           </p>
           <div className="mobile-only grid gap-3">
             {modelNames.length === 0 ? (
@@ -764,7 +810,7 @@ function Home() {
                   <article key={m} className="rounded-lg border border-border bg-surface-2 p-3">
                     <div className="flex items-start justify-between gap-2">
                       <p className="min-w-0 break-all text-sm font-medium">{m}</p>
-                      <p className="shrink-0 font-mono text-2xl font-semibold text-primary">{r.iq}</p>
+                      <p className="shrink-0 font-serif text-2xl font-bold text-primary">{r.iq}</p>
                     </div>
                     <p className="text-xs text-muted">
                       {r.total}/{r.max}
@@ -808,15 +854,15 @@ function Home() {
           <div className="desk-only overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
-                <tr className="text-xs text-muted">
-                  <th className="pb-2 pr-2 font-medium">模型</th>
+                <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
+                  <th className="border-b border-border pb-2 pr-2 text-left font-medium">模型</th>
                   {UNITS.map((u) => (
-                    <th key={u.id} className="pb-2 pr-2 font-medium" title={u.title}>
+                    <th key={u.id} className="border-b border-border pb-2 pr-2 text-left font-medium" title={u.title}>
                       {u.id}
                     </th>
                   ))}
-                  <th className="pb-2 font-medium">总分</th>
-                  <th className="pb-2 font-medium">IQ</th>
+                  <th className="border-b border-border pb-2 text-left font-medium">总分</th>
+                  <th className="border-b border-border pb-2 text-left font-medium">IQ</th>
                 </tr>
               </thead>
               <tbody>
@@ -830,7 +876,7 @@ function Home() {
                   modelNames.map((m) => {
                     const r = results[m];
                     return (
-                      <tr key={m} className="border-t border-border">
+                      <tr key={m} className="border-t border-border/60 transition-colors hover:bg-surface-2/40">
                         <td className="py-2 pr-2 font-medium">{m}</td>
                         {UNITS.map((u) => {
                           const it = r.items[u.id];
@@ -853,10 +899,10 @@ function Home() {
                         <td className="py-2 tabular-nums font-semibold">
                           {r.total}/{r.max}
                         </td>
-                        <td className="py-2 tabular-nums font-semibold text-primary" title={r.iqLo != null ? `${r.iqLo}–${r.iqHi}` : ""}>
-                          {r.iq}
+                        <td className="py-2 tabular-nums" title={r.iqLo != null ? `${r.iqLo}–${r.iqHi}` : ""}>
+                          <span className="font-serif text-lg font-bold text-primary">{r.iq}</span>
                           {r.iqLo != null ? (
-                            <span className="block text-[10px] font-normal text-muted">
+                            <span className="block font-mono text-[10px] text-muted">
                               {r.iqLo}–{r.iqHi}
                             </span>
                           ) : null}
@@ -870,8 +916,8 @@ function Home() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <p className="mb-3 text-xs text-muted">鹈鹕骑车画廊（须为踩踏 SVG 动画）</p>
+        <section className="card p-4">
+          <p className="kicker kicker-dim mb-3">鹈鹕骑车画廊（须为踩踏 SVG 动画）</p>
           <div className="grid items-stretch gap-3 sm:grid-cols-2">
             {modelNames.filter((m) => results[m].items.Q16).length === 0 ? (
               <p className="text-sm text-muted">Q16 完成后在此渲染</p>
@@ -914,8 +960,8 @@ function Home() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-surface p-4">
-          <p className="mb-3 text-xs text-muted">逐题详情</p>
+        <section className="card p-4">
+          <p className="kicker kicker-dim mb-3">逐题详情</p>
           {modelNames.length === 0 ? (
             <p className="text-sm text-muted">尚无详情</p>
           ) : (
@@ -980,6 +1026,8 @@ function Home() {
             })
           )}
         </section>
+          </>
+        )}
       </div>
 
       {reportHtml ? (

@@ -59,21 +59,21 @@ export function UserButton() {
         <img
           src={user.profileImageUrl}
           alt=""
-          className="h-8 w-8 rounded-full object-cover"
+          className="h-8 w-8 rounded-full border border-border object-cover"
         />
       ) : (
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-black/10 text-sm font-medium dark:bg-white/20">
+        <span className="grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2 text-sm font-medium text-primary">
           {label.charAt(0).toUpperCase()}
         </span>
       )}
-      <span className="text-sm font-medium">{label}</span>
+      <span className="max-w-24 truncate text-sm font-medium">{label}</span>
       {authEnabled && (
         <button
           type="button"
           onClick={() => void signOut()}
-          className="cursor-pointer text-sm underline-offset-4 opacity-70 hover:underline"
+          className="cursor-pointer text-sm text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
         >
-          Sign out
+          退出
         </button>
       )}
     </div>

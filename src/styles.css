@@ -1,19 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #1a1712;
+  --color-bg: #16130e;
   --color-fg: #f3efe4;
   --color-muted: #9a9183;
-  --color-surface: #241f18;
-  --color-surface-2: #2e2820;
+  --color-faint: #6f6759;
+  --color-surface: #221d15;
+  --color-surface-2: #2c2619;
   --color-border: #3d352b;
+  --color-border-strong: #554a38;
   --color-primary: #d4a24c;
+  --color-primary-soft: #e8c36a;
   --color-primary-fg: #1a1408;
   --color-ok: #7cbc7a;
   --color-bad: #d97868;
   --color-paper: #efe6d4;
   --color-ink: #1c1812;
   --font-sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: Georgia, "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --radius: 0.75rem;
 }
@@ -33,6 +37,11 @@
   }
   body {
     background-color: var(--color-bg);
+    background-image:
+      radial-gradient(ellipse 70% 32rem at 50% -12rem, rgba(212, 162, 76, 0.08), transparent),
+      radial-gradient(rgba(239, 230, 212, 0.055) 1px, transparent 1.4px);
+    background-size: auto, 22px 22px;
+    background-attachment: fixed, local;
     color: var(--color-fg);
     font-family: var(--font-sans);
     line-height: 1.55;
@@ -50,6 +59,37 @@
     margin-right: auto;
     overflow-x: clip;
   }
+
+  /* 区块标题：等宽小字 + 金色 kicker */
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    color: var(--color-primary);
+    text-transform: uppercase;
+  }
+  .kicker::before {
+    content: "◆";
+    margin-right: 0.5em;
+    font-size: 0.55em;
+    vertical-align: 0.18em;
+    color: var(--color-primary);
+    opacity: 0.8;
+  }
+  .kicker-dim {
+    color: var(--color-muted);
+  }
+  .kicker-dim::before {
+    color: var(--color-muted);
+  }
+
+  /* 卡片：细边 + 顶部一线高光，取代平涂灰块 */
+  .card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(232, 195, 106, 0.035), transparent 3.5rem), var(--color-surface);
+  }
+
   .desk-only {
     display: none;
   }
@@ -115,6 +155,14 @@
     min-width: 4.5rem;
     appearance: auto;
   }
+  input[type="checkbox"] {
+    accent-color: var(--color-primary);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
   button,
   a.btn {
     -webkit-tap-highlight-color: transparent;
@@ -137,5 +185,9 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+  ::selection {
+    background: rgba(212, 162, 76, 0.35);
+    color: var(--color-fg);
   }
 }

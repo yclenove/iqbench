@@ -21,7 +21,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       { name: "description", content: "猛蹬·145 · 我就看智商能低到什么程度" },
       { name: "apple-mobile-web-app-title", content: APP_NAME },
-      { name: "theme-color", content: "#1a1712" },
+      { name: "theme-color", content: "#16130e" },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:title", content: APP_NAME },
       { property: "og:description", content: "我就看智商能低到什么程度" },

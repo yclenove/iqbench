@@ -8,7 +8,10 @@ function AuthSlot() {
   return user ? (
     <UserButton />
   ) : (
-    <Link to="/login" className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-fg">
+    <Link
+      to="/login"
+      className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition-colors hover:border-primary hover:text-fg"
+    >
       登录
     </Link>
   );
@@ -18,31 +21,39 @@ export function AppHeader({ page }: { page: "home" | "board" }) {
   const item = (to: "/" | "/board", label: string, on: boolean) => (
     <Link
       to={to}
-      className={`rounded-md px-2.5 py-1 text-sm ${on ? "bg-surface-2 text-fg" : "text-muted hover:text-fg"}`}
+      className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
+        on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
+      }`}
     >
       {label}
     </Link>
   );
 
   return (
-    <header className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
-      <div className="flex min-w-0 items-center gap-3">
-        <img src="/favicon.svg" alt="" className="size-12 rounded-xl sm:size-14" />
-        <div className="min-w-0">
-          <p className="text-xl font-semibold leading-none tracking-tight sm:text-2xl">猛蹬·145</p>
-          <p className="mt-1 text-[11px] text-muted">我就看智商能低到什么程度</p>
+    <header className="border-b border-border/70">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/favicon.svg" alt="" className="size-10 rounded-xl sm:size-11" />
+          <div className="min-w-0">
+            <p className="text-lg font-bold leading-none tracking-tight sm:text-xl">
+              猛蹬·<span className="font-serif">145</span>
+            </p>
+            <p className="mt-1 hidden font-mono text-[10px] tracking-[0.2em] text-faint uppercase sm:block">
+              IQBench · bench v7
+            </p>
+          </div>
+          <nav className="ml-4 hidden items-end gap-4 sm:flex">
+            {item("/", "测评", page === "home")}
+            {item("/board", "榜单", page === "board")}
+          </nav>
         </div>
-        <nav className="ml-2 hidden items-center gap-1 sm:flex">
-          {item("/", "测评", page === "home")}
-          {item("/board", "榜单", page === "board")}
-        </nav>
-      </div>
-      <div className="flex items-center gap-2">
-        <nav className="flex items-center gap-1 sm:hidden">
-          {item("/", "测评", page === "home")}
-          {item("/board", "榜单", page === "board")}
-        </nav>
-        <AuthSlot />
+        <div className="flex items-center gap-3">
+          <nav className="flex items-end gap-4 sm:hidden">
+            {item("/", "测评", page === "home")}
+            {item("/board", "榜单", page === "board")}
+          </nav>
+          <AuthSlot />
+        </div>
       </div>
     </header>
   );
