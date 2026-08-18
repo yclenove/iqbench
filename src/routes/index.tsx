@@ -14,6 +14,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { AppHeader } from "@/components/app-header";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
 import { extractHtml, extractSvg, gallerySrcDoc, isGatewayJunk, judgeItem, shortFail } from "@/lib/judge";
+import { craftLine, priorCraftScores, scoreCraft } from "@/lib/svg-craft";
 import { listModels } from "@/lib/proxy";
 import { streamChat, withRetry } from "@/lib/stream-chat";
 import { buildReportHtml, downloadReport } from "@/lib/report";
@@ -73,6 +74,7 @@ type ItemResult = {
   tags?: string[];
   svg?: string;
   html?: string;
+  craft?: import("@/lib/svg-craft").SvgCraft;
 };
 type ModelResult = {
   items: Record<string, ItemResult>;
@@ -362,12 +364,22 @@ function Home() {
         };
         const bucket = nextResults[model];
         const junk = isGatewayJunk(content) || isGatewayJunk(preview);
+        const art = junk ? "" : judged.svg || extractSvg(content) || judged.html || extractHtml(content) || content;
+        const craft =
+          q.judge.type === "pelican_html_svg" && !junk
+            ? scoreCraft(art, priorCraftScores(model, loadRuns()))
+            : undefined;
         if (judged.extra) {
           write("Q16", judged, {
             svg: junk ? "" : judged.svg || extractSvg(content),
             html: junk ? "" : judged.html || extractHtml(content),
             detail: junk ? shortFail(preview || judged.detail) : judged.detail,
             preview: junk ? shortFail(preview) : preview,
+            craft,
+            tags: [
+              ...(judged.tags || []),
+              ...(craft?.degraded ? ["画工缩水"] : craft?.sparse ? ["画敷衍"] : []),
+            ],
           });
           Object.entries(judged.extra).forEach(([id, extra]) => write(id, extra));
         } else {
@@ -1020,6 +1032,11 @@ function Home() {
                       <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted" title={it.detail}>
                         {shortFail(it.detail)}
                       </p>
+                      {it.craft ? (
+                        <p className={`mt-0.5 font-mono text-[11px] ${it.craft.degraded ? "text-bad" : "text-muted"}`}>
+                          {craftLine(it.craft)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="gallery-frame">
                       {it.html || it.svg ? (

@@ -1,5 +1,6 @@
 import { QUESTIONS, MAX_SCORE, modelIq } from "./questions";
 import type { ProbeResult } from "./probes";
+import type { SvgCraft } from "./svg-craft";
 
 export const BENCH_VER = 7;
 const LS_RUNS = "iqbench_runs_v7";
@@ -15,6 +16,7 @@ export type ItemSnap = {
   memorized21?: boolean;
   svg?: string;
   html?: string;
+  craft?: SvgCraft;
 };
 
 export type ModelSnap = {
@@ -171,6 +173,7 @@ export function compactResults(
           memorized21?: boolean;
           svg?: string;
           html?: string;
+          craft?: SvgCraft;
         }
       >;
       probe?: ProbeResult;
@@ -199,6 +202,7 @@ export function compactResults(
           detail: (it.detail || "").slice(0, 240),
           svg: (it.svg || "").slice(0, 80000) || undefined,
           html: (it.html || "").slice(0, 80000) || undefined,
+          craft: it.craft,
         },
       ]),
     ),

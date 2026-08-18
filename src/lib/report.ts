@@ -1,5 +1,6 @@
 import { MAX_SCORE, QUESTIONS, UNITS, modelIq } from "./questions";
 import { extractSvg, shortFail } from "./judge";
+import { craftLine, type SvgCraft } from "./svg-craft";
 import { freshnessLabel, juiceLabel, probeLine, type ProbeResult } from "./probes";
 import { baselineLine, displayHost, type Baseline } from "./bench-store";
 
@@ -14,6 +15,7 @@ export type ItemResult = {
   preview: string;
   svg?: string;
   html?: string;
+  craft?: SvgCraft;
 };
 
 export type ModelResult = {
@@ -240,7 +242,9 @@ export function buildReportHtml(
       if (!it) return "";
       const inner = pelicanOf(it).replace(/<script[\s\S]*?<\/script>/gi, "");
       const extra = results[m].items.Q16a || results[m].items.Q16;
-      const note = shortFail(it.detail || extra?.detail || "");
+      const note = [shortFail(it.detail || extra?.detail || ""), extra?.craft ? craftLine(extra.craft) : ""]
+        .filter(Boolean)
+        .join(" · ");
       return `<figure>
         <figcaption>${esc(m)} · ${extra?.score ?? it.score}/14 · ${esc(note)}</figcaption>
         <div class="frame">${inner || '<p class="empty">无 SVG</p>'}</div>
