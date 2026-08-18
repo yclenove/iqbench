@@ -1,6 +1,6 @@
 import { MAX_SCORE, QUESTIONS, UNITS, modelIq } from "./questions";
-import { extractSvg } from "./judge";
-import { probeLine, type ProbeResult } from "./probes";
+import { extractSvg, shortFail } from "./judge";
+import { freshnessLabel, juiceLabel, probeLine, type ProbeResult } from "./probes";
 import { baselineLine, type Baseline } from "./bench-store";
 
 export type ItemResult = {
@@ -124,6 +124,8 @@ export function buildReportHtml(
         <td><span class="pill">${esc(b.name)}${memo ? " · 背21" : ""}</span></td>
         <td class="num">${pass}/${n}</td>
         <td class="num">${r.seconds.toFixed(1)}s</td>
+        <td>${esc(freshnessLabel(r.probe))}</td>
+        <td class="num">${esc(juiceLabel(r.probe))}</td>
       </tr>`;
     })
     .join("");
@@ -153,6 +155,28 @@ export function buildReportHtml(
       return `<tr><td class="model">${esc(m)}</td>${cells}<td class="num"><b>${results[m].total}</b></td></tr>`;
     })
     .join("");
+
+  const probeRows = models
+    .map((m) => {
+      const p = results[m].probe;
+      if (!p) {
+        return `<tr><td class="model">${esc(m)}</td><td colspan="5" class="empty">本场未跑渠道鉴定</td></tr>`;
+      }
+      const flags = [p.webSuspect, p.gapNote].filter(Boolean).join("；") || "—";
+      return `<tr>
+        <td class="model">${esc(m)}</td>
+        <td>${esc(p.freshness ?? "未知")}</td>
+        <td class="num">${p.correct}/${p.total}</td>
+        <td class="num">${p.juice.value != null ? p.juice.value : "无"}</td>
+        <td>${esc(p.identity || "—")}</td>
+        <td>${esc(flags)}</td>
+      </tr>`;
+    })
+    .join("");
+  const probeTable = `<table>
+      <thead><tr><th>模型</th><th>知识截止</th><th>阶梯答对</th><th>juice</th><th>自称</th><th>备注</th></tr></thead>
+      <tbody>${probeRows}</tbody>
+    </table>`;
 
   const modelChapters = models
     .map((m, i) => {
@@ -216,8 +240,9 @@ export function buildReportHtml(
       if (!it) return "";
       const inner = pelicanOf(it).replace(/<script[\s\S]*?<\/script>/gi, "");
       const extra = results[m].items.Q16a || results[m].items.Q16;
+      const note = shortFail(it.detail || extra?.detail || "");
       return `<figure>
-        <figcaption>${esc(m)} · ${extra?.score ?? it.score}/14 · ${esc(it.detail || extra?.detail || "")}</figcaption>
+        <figcaption>${esc(m)} · ${extra?.score ?? it.score}/14 · ${esc(note)}</figcaption>
         <div class="frame">${inner || '<p class="empty">无 SVG</p>'}</div>
       </figure>`;
     })
@@ -372,9 +397,13 @@ export function buildReportHtml(
 
     <h2>总榜</h2>
     <table>
-      <thead><tr><th>#</th><th>模型</th><th>IQ</th><th>得分</th><th>得分率</th><th>档位</th><th>通过题</th><th>耗时</th></tr></thead>
-      <tbody>${ranking || `<tr><td colspan="7">没有可导出的成绩</td></tr>`}</tbody>
+      <thead><tr><th>#</th><th>模型</th><th>IQ</th><th>得分</th><th>得分率</th><th>档位</th><th>通过题</th><th>耗时</th><th>知识截止</th><th>juice</th></tr></thead>
+      <tbody>${ranking || `<tr><td colspan="10">没有可导出的成绩</td></tr>`}</tbody>
     </table>
+
+    <h2>渠道鉴定（不计分）</h2>
+    <p class="lede">知识截止来自阶梯事件答对的最晚一档。juice 有数值通常是 Codex 反代痕迹。疑似联网 = 答对了距今很近的事件。</p>
+    ${probeTable}
 
     <h2>能力维度</h2>
     <div class="dims">${dimCards}</div>

@@ -5,6 +5,24 @@ function redact(text: string, secret: string) {
   return text.split(secret).join("[redacted]");
 }
 
+function upstreamMessage(raw: string, status: number) {
+  const text = raw.trim();
+  try {
+    const obj = JSON.parse(text) as { error?: unknown };
+    const err = obj.error;
+    if (typeof err === "string" && err.trim()) return err.trim();
+    if (err && typeof err === "object") {
+      const rec = err as { message?: unknown; code?: unknown };
+      const msg = typeof rec.message === "string" ? rec.message : "";
+      const code = typeof rec.code === "string" ? rec.code : "";
+      if (msg) return code ? `${code}: ${msg}` : msg;
+    }
+  } catch {
+    /* raw */
+  }
+  return text.slice(0, 400) || `HTTP ${status}`;
+}
+
 export const Route = createFileRoute("/api/bench/chat")({
   server: {
     handlers: {
@@ -48,7 +66,7 @@ export const Route = createFileRoute("/api/bench/chat")({
         if (!upstream.ok || !upstream.body) {
           const errText = await upstream.text();
           return Response.json(
-            { error: redact(errText.slice(0, 400), apiKey) || `HTTP ${upstream.status}` },
+            { error: redact(upstreamMessage(errText, upstream.status), apiKey) },
             { status: 502 },
           );
         }

@@ -253,3 +253,13 @@ export function probeLine(p: ProbeResult) {
   if (p.gapNote) parts.push(`注：${p.gapNote}`);
   return parts.join(" · ");
 }
+
+export function juiceLabel(p?: ProbeResult) {
+  if (!p) return "—";
+  return p.juice.value != null ? String(p.juice.value) : "无";
+}
+
+export function freshnessLabel(p?: ProbeResult) {
+  if (!p) return "—";
+  return p.freshness ? `${p.freshness}（${p.correct}/${p.total}）` : `未知（${p.correct}/${p.total}）`;
+}

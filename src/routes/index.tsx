@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -13,7 +13,7 @@ import {
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { AppHeader } from "@/components/app-header";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
-import { extractHtml, extractSvg, gallerySrcDoc, judgeItem } from "@/lib/judge";
+import { extractHtml, extractSvg, gallerySrcDoc, isGatewayJunk, judgeItem, shortFail } from "@/lib/judge";
 import { listModels } from "@/lib/proxy";
 import { streamChat, withRetry } from "@/lib/stream-chat";
 import { buildReportHtml, downloadReport } from "@/lib/report";
@@ -31,6 +31,8 @@ import {
   type BenchRun,
 } from "@/lib/bench-store";
 import { listCloudRuns, modelBaselines, saveCloudRun } from "@/lib/bench-db";
+import { BenchArchive } from "@/components/bench-archive";
+import { patchLive } from "@/lib/live-bench";
 import {
   IDENTITY_QUESTION,
   JUICE_QUESTION,
@@ -42,11 +44,18 @@ import {
   probeLine,
   summarizeProbe,
   takeIdentity,
+  freshnessLabel,
+  juiceLabel,
   type ProbeResult,
   type ProbeRow,
 } from "@/lib/probes";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    tab: raw.tab === "board" ? ("board" as const) : undefined,
+  }),
+  component: Home,
+});
 
 type ModelOpt = { id: string; kind: string };
 type ItemResult = {
@@ -97,6 +106,8 @@ function mapRun(run: BenchRun): Record<string, ModelResult> {
 }
 
 function Home() {
+  const { tab } = Route.useSearch();
+  const navigate = useNavigate();
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [rememberKey, setRememberKey] = useState(false);
@@ -240,6 +251,7 @@ function Home() {
     stopRef.current = false;
     setViewing(null);
     setRunning(true);
+    patchLive({ running: true });
     setStatus(`测评中 · ${workers} 路并行`);
     setLiveJobs({});
     const nextResults: Record<string, ModelResult> = {};
@@ -336,16 +348,21 @@ function Home() {
           };
         };
         const bucket = nextResults[model];
+        const junk = isGatewayJunk(content) || isGatewayJunk(preview);
         if (judged.extra) {
           write("Q16", judged, {
-            svg: judged.svg || extractSvg(content),
-            html: judged.html || extractHtml(content),
+            svg: junk ? "" : judged.svg || extractSvg(content),
+            html: junk ? "" : judged.html || extractHtml(content),
+            detail: junk ? shortFail(preview || judged.detail) : judged.detail,
+            preview: junk ? shortFail(preview) : preview,
           });
           Object.entries(judged.extra).forEach(([id, extra]) => write(id, extra));
         } else {
           write(q.id, judged, {
-            svg: judged.svg,
-            html: judged.html,
+            svg: junk ? "" : judged.svg,
+            html: junk ? "" : judged.html,
+            detail: junk ? shortFail(preview || judged.detail) : judged.detail,
+            preview: junk ? shortFail(preview) : preview,
           });
         }
         const scored = Object.entries(bucket.items).filter(([id]) => id !== "Q16");
@@ -466,6 +483,7 @@ function Home() {
     }
     setLiveJobs({});
     setRunning(false);
+    patchLive({ running: false });
     setStatus(stopRef.current ? "已停止" : "完成");
     append("全部结束");
   }
@@ -525,9 +543,32 @@ function Home() {
   const ladderAge = useMemo(() => ladderAgeDays(), []);
   const fresh = modelNames.length === 0 && !running;
 
+  const openArchiveRun = (run: BenchRun) => {
+    setViewing(run);
+    setResults(mapRun(run));
+    setStatus("已载入历史场次（只读对照）");
+    void navigate({ to: "/", search: { tab: undefined } });
+  };
+
   return (
     <main className="min-h-screen text-fg">
-      <AppHeader page="home" />
+      <AppHeader page={tab === "board" ? "board" : "home"} />
+
+      {tab === "board" ? (
+        <div className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
+          <div className="mb-5 mt-6">
+            <p className="kicker">Leaderboard</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight">榜单</h1>
+            <p className="mt-1 text-sm text-muted">公开榜来自登录用户。点本机历史回到测评对照，测评不会被卸掉。</p>
+          </div>
+          <BenchArchive
+            signedIn={Boolean(user)}
+            refresh={histTick}
+            onChanged={() => setHistTick((n) => n + 1)}
+            onOpen={openArchiveRun}
+          />
+        </div>
+      ) : (
 
       <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-16 sm:px-6">
         {fresh ? (
@@ -863,12 +904,14 @@ function Home() {
                   ))}
                   <th className="border-b border-border pb-2 text-left font-medium">总分</th>
                   <th className="border-b border-border pb-2 text-left font-medium">IQ</th>
+                  <th className="border-b border-border pb-2 text-left font-medium">知识</th>
+                  <th className="border-b border-border pb-2 text-left font-medium">juice</th>
                 </tr>
               </thead>
               <tbody>
                 {modelNames.length === 0 ? (
                   <tr>
-                    <td colSpan={UNITS.length + 3} className="py-6 text-muted">
+                    <td colSpan={UNITS.length + 5} className="py-6 text-muted">
                       测评后在此显示对错与分数
                     </td>
                   </tr>
@@ -907,6 +950,12 @@ function Home() {
                             </span>
                           ) : null}
                         </td>
+                        <td className="py-2 pr-2 font-mono text-[11px] text-muted" title={r.probe ? probeLine(r.probe) : ""}>
+                          {freshnessLabel(r.probe)}
+                        </td>
+                        <td className="py-2 font-mono text-[11px] tabular-nums text-muted">
+                          {juiceLabel(r.probe)}
+                        </td>
                       </tr>
                     );
                   })
@@ -936,7 +985,7 @@ function Home() {
                         </span>
                       </p>
                       <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted" title={it.detail}>
-                        {it.detail}
+                        {shortFail(it.detail)}
                       </p>
                     </div>
                     <div className="gallery-frame">
@@ -1029,6 +1078,7 @@ function Home() {
           </>
         )}
       </div>
+      )}
 
       {reportHtml ? (
         <div className="fixed inset-0 z-50 flex flex-col bg-bg/80">

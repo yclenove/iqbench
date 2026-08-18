@@ -211,7 +211,24 @@ function extractFence(text: string) {
   return fence ? fence[1] : text;
 }
 
+export function isGatewayJunk(text: string) {
+  return /524:\s*A timeout|cf-error|cloudflare|upstream_saturated|并发上限|<!--\[if (?:lt )?IE/i.test(
+    text || "",
+  );
+}
+
+export function shortFail(text: string) {
+  const s = (text || "").trim();
+  if (!s) return "无作答";
+  if (/524/.test(s)) return "网关 524 超时";
+  if (/upstream_saturated|并发上限|饱和/.test(s)) return "上游饱和";
+  if (/超时|timeout/i.test(s)) return "超时无产出";
+  if (isGatewayJunk(s) || /<!DOCTYPE html|<html[\s>]/i.test(s)) return "网关错误页，不是 SVG";
+  return s.replace(/\s+/g, " ").slice(0, 140);
+}
+
 export function extractSvg(text: string) {
+  if (isGatewayJunk(text)) return "";
   const src = extractFence(text);
   const closed = src.match(/<svg\b[\s\S]*?<\/svg>/i);
   if (closed) return closed[0];
@@ -222,7 +239,7 @@ export function extractSvg(text: string) {
 export function extractHtml(text: string) {
   const src = extractFence(text);
   const start = src.search(/<!doctype html|<html[\s>]/i);
-  if (start >= 0 && /<svg/i.test(src.slice(start))) return src.slice(start).trim();
+  if (start >= 0 && /<svg/i.test(src.slice(start)) && !isGatewayJunk(src)) return src.slice(start).trim();
   const svg = extractSvg(text);
   if (!svg) return "";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${svg}</body></html>`;
@@ -353,6 +370,7 @@ const PELICAN_IDS = [
   "pelican-pouch",
   "wheel-front",
   "wheel-rear",
+  "chain",
   "pedal-left",
   "pedal-right",
   "foot-left",

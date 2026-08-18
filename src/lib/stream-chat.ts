@@ -28,7 +28,7 @@ export function isRetryable(err: unknown, signal?: AbortSignal) {
   const msg = errText(err);
   if (err instanceof TypeError) return true;
   // 5xx 全类 + 408/429 + 常见网络层错误（含 Cloudflare 52x、DNS、断连）
-  return /HTTP 408|HTTP 429|HTTP 5\d\d|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络/i.test(
+  return /HTTP 408|HTTP 429|HTTP 5\d\d|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络/i.test(
     msg,
   );
 }
@@ -134,6 +134,7 @@ export async function streamChat(input: StreamChatInput) {
       // 1s/2s/4s 退避，限流(429)再加倍
       let wait = Math.min(8000, 1000 * 2 ** (attempt - 1));
       if (/HTTP 429/.test(errText(err))) wait *= 2;
+      if (/upstream_saturated|并发上限|饱和/.test(errText(err))) wait = Math.min(20000, 3000 * 2 ** (attempt - 1));
       input.onRetry?.(attempt, max, errText(err));
       await sleep(wait, input.signal);
     }

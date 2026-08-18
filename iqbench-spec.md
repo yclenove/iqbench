@@ -165,7 +165,7 @@ T、D 随机，x=(T−D)/2 ∈ {0.10,0.15,0.20,0.25,0.30}，且 ≠0.05。按数
 
 ## Q16 鹈鹕骑车（draw 10 + format 4，150s）
 
-内联 SVG，禁止 img/canvas/base64/外部图。id：pelican-body/beak/pouch、wheel-front/rear、pedal-left/right、foot-left/right。viewBox 恰为 `0 0 400 300`。
+内联 SVG，禁止 img/canvas/base64/外部图。id：pelican-body/beak/pouch、wheel-front/rear、chain、pedal-left/right、foot-left/right。viewBox 恰为 `0 0 400 300`。
 
 **Q16a（≥7 通过；仅无渲染环境回退时 ≥6/8 并标「几何未测」）**
 
@@ -179,7 +179,7 @@ T、D 随机，x=(T−D)/2 ∈ {0.10,0.15,0.20,0.25,0.30}，且 ≠0.05。按数
 
 **Q16b（满分才通过）**
 
-9 个 id 2；viewBox 1；完整 HTML 1。
+10 个 id 2；viewBox 1；完整 HTML 1。
 
 位图/canvas → a、b 全 0。整题展示的通过状态 = Q16a 与 Q16b 都通过。
 

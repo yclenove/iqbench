@@ -321,6 +321,7 @@ export const QUESTIONS = {
 - id="pelican-beak" 又长又扁的喙
 - id="pelican-pouch" 喙下喉囊
 - id="wheel-front" 和 id="wheel-rear"
+- id="chain" 连接两轮的车链（path 或一串环，必须能看见，不要只写个空组）
 - id="pedal-left" 和 id="pedal-right"
 - id="foot-left" 和 id="foot-right"。脚的中心必须贴近对应脚踏（距离小于车轮半径的 40%）。
 

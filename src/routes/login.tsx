@@ -70,7 +70,7 @@ function Login() {
         ) : (
           <p className="text-sm text-muted">登录已关闭。</p>
         )}
-        <Link to="/" className="block text-center text-sm text-muted transition-colors hover:text-primary">
+        <Link to="/" search={{ tab: undefined }} className="block text-center text-sm text-muted transition-colors hover:text-primary">
           返回测评台
         </Link>
       </div>

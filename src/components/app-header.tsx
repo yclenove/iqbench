@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useLiveBench } from "@/lib/live-bench";
 
 function AuthSlot() {
   const { user, isPending } = useCurrentUserState();
@@ -18,9 +19,11 @@ function AuthSlot() {
 }
 
 export function AppHeader({ page }: { page: "home" | "board" }) {
-  const item = (to: "/" | "/board", label: string, on: boolean) => (
+  const live = useLiveBench();
+  const item = (tab: "home" | "board", label: string, on: boolean) => (
     <Link
-      to={to}
+      to="/"
+      search={tab === "board" ? { tab: "board" } : { tab: undefined }}
       className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
         on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
       }`}
@@ -39,18 +42,18 @@ export function AppHeader({ page }: { page: "home" | "board" }) {
               猛蹬·<span className="font-serif">145</span>
             </p>
             <p className="mt-1 hidden font-mono text-[10px] tracking-[0.2em] text-faint uppercase sm:block">
-              IQBench · bench v7
+              {live.running ? "测评还在跑 · 切页不会停" : "IQBench · bench v7"}
             </p>
           </div>
           <nav className="ml-4 hidden items-end gap-4 sm:flex">
-            {item("/", "测评", page === "home")}
-            {item("/board", "榜单", page === "board")}
+            {item("home", "测评", page === "home")}
+            {item("board", "榜单", page === "board")}
           </nav>
         </div>
         <div className="flex items-center gap-3">
           <nav className="flex items-end gap-4 sm:hidden">
-            {item("/", "测评", page === "home")}
-            {item("/board", "榜单", page === "board")}
+            {item("home", "测评", page === "home")}
+            {item("board", "榜单", page === "board")}
           </nav>
           <AuthSlot />
         </div>
