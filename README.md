@@ -3,6 +3,12 @@
 </p>
 
 <p align="center">
+  <img src="docs/logo.svg" width="72" alt="IQBench mark">
+</p>
+
+<h1 align="center">IQBench</h1>
+
+<p align="center">
   <strong>模型智商测评台</strong> · 给 OpenAI 兼容网关用的推理评测台<br>
   填地址和 Key，拉模型，一键并行。对一半是 100。
 </p>
