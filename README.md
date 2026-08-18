@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img alt="bench" src="https://img.shields.io/badge/bench-v6.2-d4a24c?style=flat-square">
+  <img alt="bench" src="https://img.shields.io/badge/bench-v7-d4a24c?style=flat-square">
   <img alt="iq" src="https://img.shields.io/badge/IQ-55–145-1a1712?style=flat-square">
   <img alt="units" src="https://img.shields.io/badge/units-18-241f18?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/stack-TanStack%20Start-3d352b?style=flat-square">
@@ -36,11 +36,11 @@
 | --- | ---: | --- | --- |
 | 认知反射 | 1.0 | Q1–Q3 | 会不会被第一直觉带走 |
 | 多步科学 | 2.0 | Q4–Q5 | 色盲遗传、阿基米德排水 |
-| 最坏保证 | 2.5 | Q6–Q7 | 经典糖果题 + 换表参数化 |
+| 最坏保证 | 2.5 | Q6–Q7 | 经典糖果题 + 袜子配对参数化 |
 | 抗记忆 | 2.5 | Q8–Q9 | 换数字后还会不会默写 21 / 0.05 |
 | 模式归纳 | 2.0 | Q10–Q11 | 数列、字母类比 |
-| 形式逻辑 | 1.5 | Q12 | 骑士与无赖 |
-| 约束满足 | 1.5 | Q13 | 五人排队 |
+| 形式逻辑 | 1.5 | Q12 | 骑士与无赖（参数化） |
+| 约束满足 | 1.5 | Q13 | 五人排队（参数化） |
 | 数量 | 1.2 | Q14 | 注排水 |
 | 注意 | 0.8 | Q15 | 数字母（不用 strawberry） |
 | 空间作图 | 1.0 | Q16a | 鹈鹕、脚在脚踏上、轮子转 |
@@ -101,13 +101,18 @@ npm run preview
 - 切 Key 换作用域：上一把的成绩不会串到下一把。
 - 游客成绩留在这台浏览器；登录后才同步、才进公开模型榜 / 渠道榜。
 - 画廊只认内联 SVG。思考过程里写到 canvas 不再误杀整题。
+- 可选「渠道鉴定」：知识阶梯估计训练截止（铺到 2026Q3）、juice 探针抓 Codex 反代、太新的事件答对了就标疑似联网。全部不计分。
+- 降智对照：跑完自动跟全网同名模型的分数分布比，显著偏低标「疑似降智渠道」（样本 ≥5、低于中位 12 分且不超下四分位才指认）。
+- 榜单带鉴定：模型榜显示知识新旧（季度），渠道榜显示 ⚠ 联网 / juice / 降智标记，一眼看出哪家中转干净。
+- 网络重试：对话流 4 次退避重试（含 5xx/408/429/断连），拉模型、云同步、对照拉取各带 3 次重试；云端写入幂等，重复提交不会重复计数。
 
 ## 仓库里有什么
 
 ```
 src/lib/questions.ts   题库、参数化、IQ 公式
 src/lib/judge.ts       抽取、判分、鹈鹕几何
-src/lib/generators.ts  糖果 / 球拍 / 数列求解器
+src/lib/generators.ts  袜子 / 球拍 / 逻辑 / 排队求解器
+src/lib/probes.ts      渠道鉴定：知识阶梯 / juice / 联网嫌疑（不计分）
 src/lib/report.ts      导出的精美 HTML 报告
 docs/                  README 用的图
 iqbench-spec.md        给外部模型 review 的完整规格

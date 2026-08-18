@@ -1,7 +1,8 @@
 import { QUESTIONS, MAX_SCORE, modelIq } from "./questions";
+import type { ProbeResult } from "./probes";
 
-export const BENCH_VER = 6;
-const LS_RUNS = "iqbench_runs_v6";
+export const BENCH_VER = 7;
+const LS_RUNS = "iqbench_runs_v7";
 const MAX_RUNS = 80;
 
 export type ItemSnap = {
@@ -23,7 +24,37 @@ export type ModelSnap = {
   seconds: number;
   iq?: number;
   items: Record<string, ItemSnap>;
+  /** 渠道鉴定（不计分），bench v7 起可选携带 */
+  probe?: ProbeResult;
+  /** 全网降智对照（不计分），跑分当时的快照 */
+  baseline?: Baseline;
 };
+
+export type Baseline = {
+  runs: number;
+  medIq: number;
+  p25Iq: number;
+  /** 本次 IQ 与全网中位的差 */
+  delta: number;
+  suspect: boolean;
+};
+
+export function baselineVerdict(
+  iq: number,
+  row: { runs: number; med_iq: number; p25_iq: number },
+): Baseline {
+  const delta = iq - row.med_iq;
+  // 宁缺毋滥：样本 ≥5 次、低于中位 12 分、且不高于下四分位，才指认降智
+  const suspect = row.runs >= 5 && delta <= -12 && iq <= row.p25_iq;
+  return { runs: row.runs, medIq: row.med_iq, p25Iq: row.p25_iq, delta, suspect };
+}
+
+export function baselineLine(iq: number, b: Baseline) {
+  const sign = b.delta >= 0 ? "+" : "";
+  return `全网 ${b.runs} 次中位 IQ ${b.medIq}，本次 ${iq}（${sign}${b.delta}）${
+    b.suspect ? " → 疑似降智渠道" : ""
+  }`;
+}
 
 export type BenchRun = {
   id: string;
@@ -68,8 +99,9 @@ export function wipeLegacy() {
     localStorage.removeItem("iqbench_runs_v1");
     const raw = localStorage.getItem("iqbench_cfg");
     if (raw) {
-      const c = JSON.parse(raw) as { base?: string; key?: string };
-      localStorage.setItem("iqbench_cfg", JSON.stringify({ base: c.base || "" }));
+      const c = JSON.parse(raw) as Record<string, unknown>;
+      delete c.key;
+      localStorage.setItem("iqbench_cfg", JSON.stringify(c));
     }
   } catch {
     /* ignore */
@@ -97,6 +129,8 @@ export function compactResults(
           html?: string;
         }
       >;
+      probe?: ProbeResult;
+      baseline?: Baseline;
     }
   >,
 ): ModelSnap[] {
@@ -106,6 +140,8 @@ export function compactResults(
     max: r.max,
     seconds: r.seconds,
     iq: modelIq(r.items).iq,
+    probe: r.probe,
+    baseline: r.baseline,
     items: Object.fromEntries(
       Object.entries(r.items).map(([qid, it]) => [
         qid,
@@ -171,9 +207,10 @@ export function deleteRun(id: string) {
 export function clearAllRuns() {
   try {
     localStorage.removeItem(LS_RUNS);
+    localStorage.removeItem("iqbench_runs_v6");
     localStorage.removeItem("iqbench_runs_v5");
-    localStorage.removeItem("iqbench_runs_v1");
     localStorage.removeItem("iqbench_runs_v4");
+    localStorage.removeItem("iqbench_runs_v1");
   } catch {
     /* ignore */
   }
@@ -189,6 +226,8 @@ export type BoardRow = {
   runs: number;
   lastAt: string;
   host: string;
+  /** 见过的最新知识季度（字典序 max 即时间上最新） */
+  freshness: string | null;
 };
 
 export function modelBoard(runs: BenchRun[]): BoardRow[] {
@@ -200,16 +239,19 @@ export function modelBoard(runs: BenchRun[]): BoardRow[] {
       const cur = map.get(m.id);
       const row: BoardRow = cur ?? {
         model: m.id,
-        best: -1,
+        best: m.total,
         max: m.max,
-        pct: 0,
-        iq: 70,
+        pct: m.max ? Math.round((100 * m.total) / m.max) : 0,
+        iq,
         bestSeconds: m.seconds,
         runs: 0,
         lastAt: run.createdAt,
         host: run.host,
+        freshness: null,
       };
       row.runs += 1;
+      const fresh = m.probe?.freshness;
+      if (fresh && (!row.freshness || fresh > row.freshness)) row.freshness = fresh;
       if (iq > row.iq || (iq === row.iq && m.seconds < row.bestSeconds)) {
         row.best = m.total;
         row.max = m.max;
@@ -232,12 +274,24 @@ export type ChannelRow = {
   avgIq: number;
   bestIq: number;
   topModel: string;
+  webSuspect: boolean;
+  juiceSeen: boolean;
+  iqSuspect: boolean;
 };
 
 export function channelBoard(runs: BenchRun[]): ChannelRow[] {
   const map = new Map<
     string,
-    { runs: number; models: Set<string>; iqs: number[]; bestIq: number; top: string }
+    {
+      runs: number;
+      models: Set<string>;
+      iqs: number[];
+      bestIq: number;
+      top: string;
+      web: boolean;
+      juice: boolean;
+      dumb: boolean;
+    }
   >();
   for (const run of runs) {
     if (run.benchVer !== BENCH_VER) continue;
@@ -247,6 +301,9 @@ export function channelBoard(runs: BenchRun[]): ChannelRow[] {
       iqs: [] as number[],
       bestIq: 0,
       top: "—",
+      web: false,
+      juice: false,
+      dumb: false,
     };
     rec.runs += 1;
     for (const m of run.models) {
@@ -257,6 +314,9 @@ export function channelBoard(runs: BenchRun[]): ChannelRow[] {
         rec.bestIq = iq;
         rec.top = m.id;
       }
+      if (m.probe?.webSuspect) rec.web = true;
+      if (m.probe?.juice.value != null) rec.juice = true;
+      if (m.baseline?.suspect) rec.dumb = true;
     }
     map.set(run.host, rec);
   }
@@ -268,6 +328,9 @@ export function channelBoard(runs: BenchRun[]): ChannelRow[] {
       avgIq: r.iqs.length ? Math.round(r.iqs.reduce((s, n) => s + n, 0) / r.iqs.length) : 70,
       bestIq: r.bestIq,
       topModel: r.top,
+      webSuspect: r.web,
+      juiceSeen: r.juice,
+      iqSuspect: r.dumb,
     }))
     .sort((a, b) => b.avgIq - a.avgIq || b.bestIq - a.bestIq);
 }

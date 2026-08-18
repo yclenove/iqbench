@@ -34,23 +34,157 @@ export function blindCandy(round: number[], star: number[]) {
   return round[0] + round[1] + round[2] + star[2] + 1;
 }
 
-export function genCandy(rng: () => number) {
+/** 允许至多 pairs-1 双同色的前提下，最多能摸多少只（穷举，库存很小）。 */
+export function maxNoPairs(stock: number[], pairs: number) {
+  let best = 0;
+  const rec = (i: number, taken: number, made: number) => {
+    if (made >= pairs) return;
+    if (i === stock.length) {
+      best = Math.max(best, taken);
+      return;
+    }
+    for (let n = 0; n <= stock[i]!; n++) rec(i + 1, taken + n, made + Math.floor(n / 2));
+  };
+  rec(0, 0, 0);
+  return best;
+}
+
+export function socksAnswer(stock: number[], pairs: number) {
+  return maxNoPairs(stock, pairs) + 1;
+}
+
+const SOCK_COLORS = ["红", "蓝", "白", "黑", "灰"];
+
+/** 只出「库存约束生效」的实例：真实答案 ≠ 无限库存公式 2p+c−1。 */
+export function genSocks(rng: () => number) {
   for (let i = 0; i < 400; i++) {
-    const round = [irand(rng, 3, 9), irand(rng, 3, 9), irand(rng, 3, 9)];
-    const star = [irand(rng, 3, 9), irand(rng, 3, 9), irand(rng, 3, 9)];
-    const shape = minCandy(round, star);
-    const blind = blindCandy(round, star);
-    const stock = round.reduce((a, b) => a + b, 0) + star.reduce((a, b) => a + b, 0);
-    if (shape.best < Infinity && shape.best !== blind && shape.best <= stock && blind <= stock) {
-      return { round, star, shapeMin: shape.best, shapePick: { x: shape.x, y: shape.y }, blindMin: blind };
+    const c = irand(rng, 3, 4);
+    const stock = Array.from({ length: c }, () => irand(rng, 2, 7));
+    const pairs = irand(rng, 2, 4);
+    const capacity = stock.reduce((s, n) => s + Math.floor(n / 2), 0);
+    if (capacity < pairs) continue;
+    const ans = socksAnswer(stock, pairs);
+    const naive = 2 * pairs + c - 1;
+    if (ans !== naive) {
+      return { colors: SOCK_COLORS.slice(0, c), stock, pairs, ans, naive };
     }
   }
+  return { colors: SOCK_COLORS.slice(0, 3), stock: [2, 2, 3], pairs: 3, ans: 7, naive: 8 };
+}
+
+const KNIGHT_NAMES = ["甲", "乙", "丙"];
+
+type KnightStmt = { speaker: number; kind: "knight" | "knave" | "bothKnaves"; target: number };
+
+/** 恰好 1 名骑士；随机生成发言并用真值表验证唯一解。 */
+export function genKnights(rng: () => number) {
+  const holds = (knight: number, s: KnightStmt) => {
+    let truth: boolean;
+    if (s.kind === "knight") truth = s.target === knight;
+    else if (s.kind === "knave") truth = s.target !== knight;
+    else {
+      const others = [0, 1, 2].filter((j) => j !== s.speaker);
+      truth = others.every((j) => j !== knight);
+    }
+    return (s.speaker === knight) === truth;
+  };
+  for (let i = 0; i < 400; i++) {
+    const stmts: KnightStmt[] = KNIGHT_NAMES.map((_, idx) => {
+      const others = [0, 1, 2].filter((j) => j !== idx);
+      return {
+        speaker: idx,
+        kind: pick(rng, ["knight", "knave", "bothKnaves"] as const),
+        target: pick(rng, others),
+      };
+    });
+    const solutions = [0, 1, 2].filter((k) => stmts.every((s) => holds(k, s)));
+    if (solutions.length !== 1) continue;
+    const lines = stmts.map((s) => {
+      const who = KNIGHT_NAMES[s.speaker];
+      if (s.kind === "knight") return `${who}说：${KNIGHT_NAMES[s.target]}是骑士。`;
+      if (s.kind === "knave") return `${who}说：${KNIGHT_NAMES[s.target]}是无赖。`;
+      const others = [0, 1, 2]
+        .filter((j) => j !== s.speaker)
+        .map((j) => KNIGHT_NAMES[j])
+        .join("和");
+      return `${who}说：${others}都是无赖。`;
+    });
+    return { knight: KNIGHT_NAMES[solutions[0]!]!, lines };
+  }
   return {
-    round: [5, 8, 6],
-    star: [4, 3, 5],
-    shapeMin: 17,
-    shapePick: { x: 7, y: 10 },
-    blindMin: 25,
+    knight: "丙",
+    lines: ["甲说：乙是骑士。", "乙说：甲和丙都是无赖。", "丙说：乙是无赖。"],
+  };
+}
+
+const LINEUP_NAMES = ["甲", "乙", "丙", "丁", "戊"];
+
+function permutations<T>(arr: T[]): T[][] {
+  if (arr.length <= 1) return [arr];
+  return arr.flatMap((v, i) =>
+    permutations([...arr.slice(0, i), ...arr.slice(i + 1)]).map((rest) => [v, ...rest]),
+  );
+}
+
+/** 从随机真值排列反推 5 条约束，并穷举 120 种排列验证唯一解。 */
+export function genLineup(rng: () => number) {
+  const perms = permutations(LINEUP_NAMES);
+  for (let i = 0; i < 400; i++) {
+    const truth = pick(rng, perms);
+    const pos = (p: string, order: string[]) => order.indexOf(p) + 1;
+
+    const notEnd = truth[irand(rng, 1, 3)]!;
+    const [rightA, rightB] = (() => {
+      for (let g = 0; g < 40; g++) {
+        const x = pick(rng, LINEUP_NAMES);
+        const y = pick(rng, LINEUP_NAMES);
+        if (x !== y && pos(x, truth) > pos(y, truth)) return [x, y] as const;
+      }
+      return [truth[4]!, truth[0]!] as const;
+    })();
+    const adjIdx = irand(rng, 0, 3);
+    const adjLeft = truth[adjIdx]!;
+    const adjRight = truth[adjIdx + 1]!;
+    const [farA, farB] = (() => {
+      for (let g = 0; g < 40; g++) {
+        const x = pick(rng, LINEUP_NAMES);
+        const y = pick(rng, LINEUP_NAMES);
+        if (x !== y && Math.abs(pos(x, truth) - pos(y, truth)) >= 2) return [x, y] as const;
+      }
+      return [truth[0]!, truth[2]!] as const;
+    })();
+    const fixedPos = pick(rng, [1, 2, 4, 5]);
+    const fixedWho = truth[fixedPos - 1]!;
+
+    const satisfies = (order: string[]) =>
+      pos(notEnd, order) !== 1 &&
+      pos(notEnd, order) !== 5 &&
+      pos(rightA, order) > pos(rightB, order) &&
+      pos(adjLeft, order) + 1 === pos(adjRight, order) &&
+      Math.abs(pos(farA, order) - pos(farB, order)) >= 2 &&
+      pos(fixedWho, order) === fixedPos;
+
+    const fits = perms.filter(satisfies);
+    if (fits.length !== 1) continue;
+    const lines = [
+      `1. ${notEnd}不在两端；`,
+      `2. ${rightA}在${rightB}的右边（${rightA}的位置编号更大）；`,
+      `3. ${adjLeft}在${adjRight}的左边且与${adjRight}相邻；`,
+      `4. ${farA}不和${farB}相邻；`,
+      `5. ${fixedWho}在第 ${fixedPos} 个位置。`,
+    ];
+    return { order: truth.join(""), mid: truth[2]!, lines };
+  }
+  return {
+    order: "戊丙丁甲乙",
+    mid: "丁",
+    lines: [
+      "1. 甲不在两端；",
+      "2. 乙在丙的右边（乙的位置编号更大）；",
+      "3. 丁在甲的左边且与甲相邻；",
+      "4. 戊不和乙相邻；",
+      "5. 丙在第 2 个位置。",
+    ],
   };
 }
 

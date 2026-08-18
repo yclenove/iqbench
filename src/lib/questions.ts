@@ -2,11 +2,13 @@ import { mulberry32, seedFrom } from "./rng";
 import {
   genAnalogy,
   genBat,
-  genCandy,
   genCount,
   genJson,
+  genKnights,
+  genLineup,
   genPipes,
   genSeq,
+  genSocks,
 } from "./generators";
 
 export type Judge =
@@ -34,6 +36,8 @@ export type Question = {
   parametric?: boolean;
   units?: Array<{ id: string; dim: string; score: number }>;
   prompt?: string;
+  /** 覆盖全局系统提示（用于与「最终答案行」要求冲突的格式题）。 */
+  system?: string;
   judge: Judge;
   instantiate?: (rng: () => number) => Instantiated;
 };
@@ -127,22 +131,23 @@ export const QUESTIONS = {
     {
       id: "Q7",
       dim: "worstcase",
-      title: "参数化糖果题",
+      title: "袜子配对（参数化）",
       score: 16,
       timeBudget: 120,
       expect: "由求解器给出",
       parametric: true,
-      judge: { type: "named", name: "candy_param" },
+      judge: { type: "named", name: "socks" },
       instantiate: (rng) => {
-        const g = genCandy(rng);
+        const g = genSocks(rng);
+        const stockText = g.stock.map((n, i) => `${g.colors[i]}色 ${n} 只`).join("、");
         return {
-          label: `圆${g.round.join("/")} 星${g.star.join("/")}`,
-          expect: `${g.shapeMin}（盲取 ${g.blindMin}）`,
-          prompt: `三种口味糖果，各有圆形和五角星形。手感可辨形状、不能辨口味。事先决定圆形取几个、五角星取几个。数量：圆形 苹果${g.round[0]} 桃子${g.round[1]} 西瓜${g.round[2]}；五角星 苹果${g.star[0]} 桃子${g.star[1]} 西瓜${g.star[2]}。最坏情况下仍保证：（圆形苹果且五角星桃子）或（圆形桃子且五角星苹果）。圆形+五角星的最少总数是多少？必须按本题数字重算。`,
+          label: `${g.stock.join("/")} 求 ${g.pairs} 双`,
+          expect: `${g.ans}（无限库存公式 ${g.naive}）`,
+          prompt: `抽屉里混放着 ${g.colors.length} 种颜色的袜子：${stockText}。房间全黑，摸出来之前看不见颜色。两只同色袜子算一双，每只袜子只能计入一双。最少要摸出多少只，才能保证凑出至少 ${g.pairs} 双同色袜子？注意每种颜色的数量有限，必须按本题数字推算最坏情况。`,
           judge: {
             type: "named",
-            name: "candy_param",
-            expectHint: JSON.stringify({ shape: g.shapeMin, blind: g.blindMin }),
+            name: "socks",
+            expectHint: JSON.stringify({ ans: g.ans, naive: g.naive }),
           },
         };
       },
@@ -222,24 +227,40 @@ export const QUESTIONS = {
     {
       id: "Q12",
       dim: "logic",
-      title: "骑士与无赖",
+      title: "骑士与无赖（参数化）",
       score: 10,
       timeBudget: 60,
-      expect: "丙",
-      prompt:
-        "甲、乙、丙三人中，骑士永远说真话，无赖永远说假话。已知恰好有 1 个骑士。\n甲说：乙是骑士。\n乙说：甲和丙都是无赖。\n丙说：乙是无赖。\n谁是骑士？",
+      expect: "由求解器给出",
+      parametric: true,
       judge: { type: "named", name: "knights" },
+      instantiate: (rng) => {
+        const g = genKnights(rng);
+        return {
+          label: g.lines.join(" "),
+          expect: g.knight,
+          prompt: `甲、乙、丙三人中，骑士永远说真话，无赖永远说假话。已知恰好有 1 个骑士。\n${g.lines.join("\n")}\n谁是骑士？`,
+          judge: { type: "named", name: "knights", expectHint: g.knight },
+        };
+      },
     },
     {
       id: "Q13",
       dim: "constraint",
-      title: "五人排队",
+      title: "五人排队（参数化）",
       score: 10,
       timeBudget: 60,
-      expect: "丁",
-      prompt:
-        "甲、乙、丙、丁、戊从左到右站成一排（位置 1 到 5，1 最左）：\n1. 甲不在两端；\n2. 乙在丙的右边（乙的位置编号更大）；\n3. 丁在甲的左边且与甲相邻；\n4. 戊不和乙相邻；\n5. 丙在第 2 个位置。\n问：站在中间（第 3 位）的是谁？",
+      expect: "由求解器给出",
+      parametric: true,
       judge: { type: "named", name: "lineup" },
+      instantiate: (rng) => {
+        const g = genLineup(rng);
+        return {
+          label: g.order,
+          expect: g.mid,
+          prompt: `甲、乙、丙、丁、戊从左到右站成一排（位置 1 到 5，1 最左）：\n${g.lines.join("\n")}\n问：站在中间（第 3 位）的是谁？`,
+          judge: { type: "named", name: "lineup", expectHint: g.order },
+        };
+      },
     },
     {
       id: "Q14",
@@ -290,6 +311,8 @@ export const QUESTIONS = {
         { id: "Q16a", dim: "draw", score: 10 },
         { id: "Q16b", dim: "format", score: 4 },
       ],
+      system:
+        "你是严谨的前端工程师。禁止使用外部工具、搜索或执行代码。只输出一个完整 HTML 文档，从 <!DOCTYPE html> 开始，不要输出任何解释文字。",
       prompt: `请写一个完整 HTML 页面，用内联 SVG 做「一只鹈鹕正在骑自行车」的循环动画。不要 img、不要外部图片、不要 canvas、不要文生图、不要 base64。
 
 硬性结构（id 必须完全一致）：
@@ -317,6 +340,8 @@ export const QUESTIONS = {
       timeBudget: 20,
       expect: "三字段全对且无夹带",
       parametric: true,
+      system:
+        "你是严谨的推理者。禁止使用外部工具、搜索或执行代码。严格按题目要求的格式输出，不要输出要求之外的任何文字。",
       judge: { type: "strict_json", expect: {} },
       instantiate: (rng) => {
         const g = genJson(rng);

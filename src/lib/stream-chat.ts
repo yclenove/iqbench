@@ -27,7 +27,8 @@ export function isRetryable(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return false;
   const msg = errText(err);
   if (err instanceof TypeError) return true;
-  return /HTTP 429|HTTP 500|HTTP 502|HTTP 503|HTTP 504|HTTP 524|Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT|timeout|超时|网络/.test(
+  // 5xx 全类 + 408/429 + 常见网络层错误（含 Cloudflare 52x、DNS、断连）
+  return /HTTP 408|HTTP 429|HTTP 5\d\d|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络/i.test(
     msg,
   );
 }
@@ -119,7 +120,7 @@ async function streamChatOnce(input: StreamChatInput) {
 }
 
 export async function streamChat(input: StreamChatInput) {
-  const max = 3;
+  const max = 4;
   let lastErr: unknown = new Error("未知错误");
   for (let attempt = 1; attempt <= max; attempt++) {
     if (input.signal?.aborted) {
@@ -130,9 +131,26 @@ export async function streamChat(input: StreamChatInput) {
     } catch (err) {
       lastErr = err;
       if (!isRetryable(err, input.signal) || attempt === max) throw err;
-      const wait = 1000 * 2 ** (attempt - 1);
+      // 1s/2s/4s 退避，限流(429)再加倍
+      let wait = Math.min(8000, 1000 * 2 ** (attempt - 1));
+      if (/HTTP 429/.test(errText(err))) wait *= 2;
       input.onRetry?.(attempt, max, errText(err));
       await sleep(wait, input.signal);
+    }
+  }
+  throw lastErr;
+}
+
+/** 非流式调用的通用重试（拉模型列表 / 云同步 / 对照拉取）。默认 3 次，0.8s/1.6s 退避 */
+export async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let lastErr: unknown = new Error("未知错误");
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === tries) break;
+      await new Promise((r) => setTimeout(r, Math.min(4000, 800 * 2 ** (attempt - 1))));
     }
   }
   throw lastErr;

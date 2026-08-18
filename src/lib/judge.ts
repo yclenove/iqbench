@@ -65,6 +65,14 @@ export function isolatedNumber(text: string, number: string) {
   return new RegExp(`(?<!\\d)${n}(?!\\d)`).test(text);
 }
 
+/** 按数值而非字面匹配：兼容 0.1 / 0.10 / 12.0 等书写差异。 */
+export function containsNumber(text: string, value: number | string) {
+  const want = Number(value);
+  if (!Number.isFinite(want)) return false;
+  const tokens = text.match(/-?\d+(?:\.\d+)?/g) || [];
+  return tokens.some((t) => Math.abs(Number(t) - want) < 1e-9);
+}
+
 function negated(focus: string, key: string) {
   return new RegExp(`(?:不|非|不是|并非|绝不)${key}`).test(focus);
 }
@@ -87,7 +95,7 @@ function namedScore(
     return { ok, detail: ok ? "判定：不叫醒/不喂药" : "未压住「该喂药」的直觉" };
   }
   if (name === "wash") {
-    const ok = /(开车|驾车|把车开|开过去)/.test(focus);
+    const ok = /(开着?车|驾车|驾驶|自驾|把车开|开过去)/.test(focus);
     return { ok, detail: ok ? "判定：开车去" : "未点明开车把车送去洗" };
   }
   if (name === "colorblind") {
@@ -109,19 +117,13 @@ function namedScore(
     return { ok: false, detail: "未判定水位下降" };
   }
   if (name === "crt_money_classic") {
-    const ok =
-      isolatedNumber(focus, "0.05") ||
-      isolatedNumber(focus, "0.050") ||
-      /(?<!\d)5\s*分/.test(focus) ||
-      /五\s*分/.test(focus);
+    const ok = containsNumber(focus, 0.05) || /(?<!\d)5\s*分/.test(focus) || /五\s*分/.test(focus);
     return { ok, detail: ok ? "抗直觉：0.05" : "可能答成了 0.10" };
   }
   if (name === "crt_money_var") {
     const want = hint || "";
-    const ok = Boolean(
-      want && (isolatedNumber(focus, want) || isolatedNumber(focus, Number(want).toString())),
-    );
-    const classic = isolatedNumber(focus, "0.05");
+    const ok = Boolean(want) && containsNumber(focus, want);
+    const classic = containsNumber(focus, 0.05);
     return {
       ok,
       tags: !ok && classic ? ["背原题"] : undefined,
@@ -129,58 +131,72 @@ function namedScore(
     };
   }
   if (name === "knights") {
-    const jiaKnight = /(骑士是甲|甲是骑士|甲为骑士)/.test(focus);
-    const yiKnight = /(骑士是乙|乙是骑士|乙为骑士)/.test(focus);
-    const bingKnight =
-      ((/(骑士是丙|丙是骑士|丙为骑士|只有丙|仅丙)/.test(focus) || /^[丙C]$/i.test(focus.trim())) &&
-        !negated(focus, "丙")) ||
-      (/(?<![不非])是丙/.test(focus) && !/不是丙|非丙/.test(focus));
-    const ok = Boolean(bingKnight) && !jiaKnight && !yiKnight && !/不是丙|非丙/.test(focus);
-    return { ok, detail: ok ? "骑士是丙" : "未锁定丙" };
+    const win = (hint || "丙").trim() || "丙";
+    const letter: Record<string, string> = { 甲: "A", 乙: "B", 丙: "C" };
+    const claims = (p: string) =>
+      (new RegExp(`(骑士是${p}|${p}是骑士|${p}为骑士|只有${p}|仅${p})`).test(focus) ||
+        new RegExp(`^[${p}${letter[p] || ""}]$`, "i").test(focus.trim())) &&
+      !negated(focus, p);
+    const negWin = new RegExp(`(?:不是|并非|非)${win}`).test(focus);
+    const winHit =
+      claims(win) || (new RegExp(`(?<![不非])是${win}`).test(focus) && !negWin);
+    const others = ["甲", "乙", "丙"].filter((p) => p !== win);
+    const ok = winHit && !negWin && others.every((p) => !claims(p));
+    return { ok, detail: ok ? `骑士是${win}` : `未锁定${win}` };
   }
   if (name === "lineup") {
-    const dingMid =
-      /(中间是丁|中间为丁|丁在中间|第\s*3\s*[位个]是丁|第\s*3\s*[位个]为丁|3\s*号是丁)/.test(focus) ||
-      /^丁$/.test(focus.trim()) ||
-      /戊\s*丙\s*丁\s*甲\s*乙/.test(focus);
-    const otherMid = /(中间是[甲乙丙戊]|第\s*3\s*[位个]是[甲乙丙戊])/.test(focus);
-    const ok = dingMid && !otherMid;
-    return { ok, detail: ok ? "中间是丁" : "未定位丁" };
+    const order = (hint || "戊丙丁甲乙").trim();
+    const mid = order[2] || "丁";
+    const others = ["甲", "乙", "丙", "丁", "戊"].filter((p) => p !== mid).join("");
+    const midHit =
+      new RegExp(
+        `(中间是${mid}|中间为${mid}|${mid}在中间|第\\s*3\\s*[位个]是${mid}|第\\s*3\\s*[位个]为${mid}|3\\s*号是${mid})`,
+      ).test(focus) ||
+      new RegExp(`^${mid}$`).test(focus.trim()) ||
+      new RegExp(order.split("").join("\\s*")).test(focus);
+    const otherMid = new RegExp(`(中间是[${others}]|第\\s*3\\s*[位个]是[${others}])`).test(focus);
+    const ok = midHit && !otherMid;
+    return { ok, detail: ok ? `中间是${mid}` : `未定位${mid}` };
   }
   if (name === "candy_var") {
-    if (isolatedNumber(focus, "17")) return { ok: true, detail: "按新表算出 17" };
-    if (isolatedNumber(focus, "25")) {
+    if (containsNumber(focus, 17)) return { ok: true, detail: "按新表算出 17" };
+    if (containsNumber(focus, 25)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "25 是盲取答案，半分" };
     }
-    if (isolatedNumber(focus, "21")) {
+    if (containsNumber(focus, 21)) {
       return { ok: false, tags: ["疑似套用经典答案"], detail: "答成 21，疑似套用经典题" };
     }
     return { ok: false, detail: "未命中 17" };
   }
   if (name === "candy_classic") {
-    if (isolatedNumber(focus, "21")) return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
-    if (isolatedNumber(focus, "29")) {
+    if (containsNumber(focus, 21)) return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
+    if (containsNumber(focus, 29)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "29 是盲取答案，半分" };
     }
     return { ok: false, detail: "未命中 21" };
   }
-  if (name === "candy_param") {
-    let shape = 0;
-    let blind = 0;
+  if (name === "socks") {
+    let ans = 0;
+    let naive = 0;
     try {
-      const o = JSON.parse(hint || "{}") as { shape?: number; blind?: number };
-      shape = o.shape || 0;
-      blind = o.blind || 0;
+      const o = JSON.parse(hint || "{}") as { ans?: number; naive?: number };
+      ans = o.ans || 0;
+      naive = o.naive || 0;
     } catch {
       /* ignore */
     }
-    if (shape && isolatedNumber(focus, String(shape))) {
-      return { ok: true, detail: `形状模型最优 ${shape}` };
+    if (ans && containsNumber(focus, ans)) {
+      return { ok: true, detail: `按实际库存最坏情况算出 ${ans}` };
     }
-    if (blind && isolatedNumber(focus, String(blind))) {
-      return { ok: false, partial: 0.5, tags: ["替代建模"], detail: `盲取 ${blind}，半分` };
+    if (naive && containsNumber(focus, naive)) {
+      return {
+        ok: false,
+        partial: 0.5,
+        tags: ["替代建模"],
+        detail: `套用无限库存公式 ${naive}，半分`,
+      };
     }
-    return { ok: false, detail: `未命中 ${shape}` };
+    return { ok: false, detail: `未命中 ${ans}` };
   }
   if (name === "analogy") {
     const want = (hint || "").trim();
@@ -237,17 +253,6 @@ function isRasterCheat(markup: string) {
     /data:image\//i.test(markup) ||
     /<image\b[^>]*(?:href|xlink:href)\s*=\s*["'](?:data:|https?:)/i.test(markup)
   );
-}
-
-function applyTime(
-  accuracy: number,
-  seconds: number,
-  cap: number,
-  notes: string[],
-  passAt: number,
-): Judged {
-  const factor = accuracy <= 0 ? 0 : speedFactor(seconds, 1) ? speedFactor(seconds, 1) : 0;
-  return applyTimeBudget(accuracy, seconds, cap, notes, passAt, factor);
 }
 
 function applyTimeBudget(
@@ -336,58 +341,204 @@ function wheelRotateScore(svg: string) {
   return { pts: 0, note: "车轮未旋转" };
 }
 
-function centerOf(tag: string): { x: number; y: number } | null {
-  const cx = attrNum(tag, "cx") ?? attrNum(tag, "x");
-  const cy = attrNum(tag, "cy") ?? attrNum(tag, "y");
-  if (cx != null && cy != null) return { x: cx, y: cy };
-  const t = tag.match(/translate\(\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/);
-  if (t) return { x: Number(t[1]), y: Number(t[2]) };
-  return null;
-}
-
 function parseViewBox(svg: string) {
   const m = svg.match(/viewBox\s*=\s*["']\s*(-?[\d.]+)\s+(-?[\d.]+)\s+([\d.]+)\s+([\d.]+)/i);
   if (!m) return { minX: 0, minY: 0, w: 400, h: 300 };
   return { minX: Number(m[1]), minY: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
 }
 
-function scorePelican(text: string) {
+const PELICAN_IDS = [
+  "pelican-body",
+  "pelican-beak",
+  "pelican-pouch",
+  "wheel-front",
+  "wheel-rear",
+  "pedal-left",
+  "pedal-right",
+  "foot-left",
+  "foot-right",
+];
+
+function sanitizeSvgForMount(svg: string) {
+  return svg
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "")
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/((?:xlink:)?href\s*=\s*["'])\s*javascript:[^"']*/gi, "$1#");
+}
+
+type Box = { x: number; y: number; w: number; h: number; cx: number; cy: number };
+
+type SvgProbe = {
+  has: (id: string) => boolean;
+  box: (id: string) => Box | null;
+  contentBox: () => Box | null;
+  wheelSpins: (id: string) => boolean;
+  pedalBound: (ids: string[]) => boolean;
+  hasAnyAnim: () => boolean;
+  cleanup: () => void;
+};
+
+/** 把 SVG 挂进隐藏容器，用真实渲染几何（getBBox/getCTM）测量，SMIL 定格在 t=0。 */
+function mountProbe(svgMarkup: string): SvgProbe | null {
+  if (typeof document === "undefined" || !document.body) return null;
+  const holder = document.createElement("div");
+  holder.style.cssText =
+    "position:fixed;left:-99999px;top:0;width:400px;height:300px;overflow:hidden;visibility:hidden;pointer-events:none";
+  holder.innerHTML = sanitizeSvgForMount(svgMarkup);
+  const root = holder.querySelector("svg");
+  if (!root) return null;
+  document.body.appendChild(holder);
+  try {
+    root.pauseAnimations();
+    root.setCurrentTime(0);
+  } catch {
+    /* SMIL 不可用时按当前状态测量 */
+  }
+  const q = (id: string) => root.querySelector<SVGGraphicsElement>(`[id="${id}"]`);
+  const toBox = (el: SVGGraphicsElement | null): Box | null => {
+    if (!el) return null;
+    try {
+      const bb = el.getBBox();
+      if (!(bb.width > 0) && !(bb.height > 0)) return null;
+      const m = el.getCTM();
+      const corners = [
+        [bb.x, bb.y],
+        [bb.x + bb.width, bb.y],
+        [bb.x, bb.y + bb.height],
+        [bb.x + bb.width, bb.y + bb.height],
+      ].map(([x, y]) => (m ? { x: m.a * x! + m.c * y! + m.e, y: m.b * x! + m.d * y! + m.f } : { x: x!, y: y! }));
+      const xs = corners.map((p) => p.x);
+      const ys = corners.map((p) => p.y);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      const w = Math.max(...xs) - x;
+      const h = Math.max(...ys) - y;
+      return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+    } catch {
+      return null;
+    }
+  };
+  const allAnims = (scope: Element) => [
+    ...scope.querySelectorAll("animate, animateTransform, animateMotion"),
+  ];
+  const hrefOf = (el: Element) => {
+    const href = el.getAttribute("href") || el.getAttribute("xlink:href") || "";
+    return href.startsWith("#") ? href.slice(1) : "";
+  };
+  const rotateTargets = new Set<string>();
+  const animTargets = new Set<string>();
+  for (const anim of allAnims(root)) {
+    const target = hrefOf(anim);
+    if (!target) continue;
+    animTargets.add(target);
+    if (
+      anim.tagName.toLowerCase() === "animatetransform" &&
+      (anim.getAttribute("type") || "").toLowerCase() === "rotate"
+    ) {
+      rotateTargets.add(target);
+    }
+  }
+  const isRotate = (el: Element) =>
+    el.tagName.toLowerCase() === "animatetransform" &&
+    (el.getAttribute("type") || "").toLowerCase() === "rotate";
+  const isAnim = (el: Element) => /^animate(transform|motion)?$/i.test(el.tagName);
+  return {
+    has: (id) => Boolean(q(id)),
+    box: (id) => toBox(q(id)),
+    contentBox: () => {
+      try {
+        const bb = root.getBBox();
+        if (!(bb.width > 0) || !(bb.height > 0)) return null;
+        return {
+          x: bb.x,
+          y: bb.y,
+          w: bb.width,
+          h: bb.height,
+          cx: bb.x + bb.width / 2,
+          cy: bb.y + bb.height / 2,
+        };
+      } catch {
+        return null;
+      }
+    },
+    wheelSpins: (id) => {
+      const el = q(id);
+      if (!el) return false;
+      if (rotateTargets.has(id)) return true;
+      if ([...el.querySelectorAll("animateTransform")].some(isRotate)) return true;
+      // 旋转挂在包住这个轮子（且不包住另一个轮子）的父组上也算
+      const other = id === "wheel-front" ? "wheel-rear" : "wheel-front";
+      for (let p = el.parentElement; p && p !== (root as unknown as Element); p = p.parentElement) {
+        if ([...p.children].some(isRotate) && !p.querySelector(`[id="${other}"]`)) return true;
+      }
+      return false;
+    },
+    pedalBound: (ids) => {
+      for (const id of ids) {
+        const el = q(id);
+        if (!el) continue;
+        if (animTargets.has(id) || allAnims(el).length) return true;
+        // 曲柄组：包住脚/脚踏但不包住车轮的父组带动画也算
+        for (let p = el.parentElement; p && p !== (root as unknown as Element); p = p.parentElement) {
+          if (
+            [...p.children].some(isAnim) &&
+            !p.querySelector('[id="wheel-front"],[id="wheel-rear"]')
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    hasAnyAnim: () => allAnims(root).length > 0,
+    cleanup: () => holder.remove(),
+  };
+}
+
+type PelicanScore = {
+  a: number;
+  b: number;
+  notesA: string[];
+  notesB: string[];
+  html: string;
+  svg: string;
+  geoTested: boolean;
+};
+
+function scorePelican(text: string): PelicanScore {
   const html = extractHtml(text);
   const svg = extractSvg(text);
+  const zero = (why: string): PelicanScore => ({
+    a: 0,
+    b: 0,
+    notesA: [why],
+    notesB: [why],
+    html,
+    svg,
+    geoTested: false,
+  });
+  if (!svg) return zero("没有内联 SVG");
+  if (isRasterCheat(svg) || isRasterCheat(html)) return zero("位图/canvas，整题 0");
+
+  const raw = svg;
   const notesA: string[] = [];
   const notesB: string[] = [];
-  if (!svg) {
-    const zero = {
-      a: 0,
-      b: 0,
-      notesA: ["没有内联 SVG"],
-      notesB: ["没有内联 SVG"],
-      html: "",
-      svg: "",
-      skipGeo: false,
-    };
-    return zero;
-  }
-  const raw = svg;
-  if (isRasterCheat(svg) || isRasterCheat(html)) {
-    return { a: 0, b: 0, notesA: ["位图/canvas，整题 0"], notesB: ["位图/canvas，整题 0"], html, svg, skipGeo: false };
-  }
-
   let a = 0;
   let b = 0;
-  const required = [
-    "pelican-body",
-    "pelican-beak",
-    "pelican-pouch",
-    "wheel-front",
-    "wheel-rear",
-    "pedal-left",
-    "pedal-right",
-    "foot-left",
-    "foot-right",
-  ];
-  const found = required.filter((id) => findById(raw, id));
-  b += Math.floor((found.length / required.length) * 2);
+
+  let probe: SvgProbe | null = null;
+  try {
+    probe = mountProbe(raw);
+  } catch {
+    probe = null;
+  }
+
+  // —— Q16b 指令遵循 ——
+  const found = probe
+    ? PELICAN_IDS.filter((id) => probe.has(id))
+    : PELICAN_IDS.filter((id) => findById(raw, id));
+  b += Math.floor((found.length / PELICAN_IDS.length) * 2);
   notesB.push(`id ${found.length}/9`);
   if (/viewBox\s*=\s*["']\s*0\s+0\s+400\s+300/.test(raw)) {
     b += 1;
@@ -398,6 +549,93 @@ function scorePelican(text: string) {
     notesB.push("完整 HTML");
   }
 
+  // —— Q16a 空间作图 ——
+  if (probe) {
+    try {
+      // 1. 车轮旋转 2 分
+      const front = probe.wheelSpins("wheel-front");
+      const rear = probe.wheelSpins("wheel-rear");
+      if (front && rear) {
+        a += 2;
+        notesA.push("双轮 rotate");
+      } else if (front || rear) {
+        a += 1;
+        notesA.push("单轮 rotate");
+      } else notesA.push("车轮未旋转");
+
+      // 2. 踩踏动画 2 分
+      if (probe.pedalBound(["pedal-left", "pedal-right", "foot-left", "foot-right"])) {
+        a += 2;
+        notesA.push("踩踏动画");
+      } else if (probe.hasAnyAnim()) {
+        a += 1;
+        notesA.push("文档有动画，脚踏未绑定");
+      } else notesA.push("没有动画");
+
+      // 3. 脚贴脚踏 2 分（真实渲染坐标，含任意 transform）
+      const wheelBox = probe.box("wheel-rear") || probe.box("wheel-front");
+      const radius = wheelBox ? Math.max(wheelBox.w, wheelBox.h) / 2 : 20;
+      let planted = 0;
+      for (const [f, p] of [
+        ["foot-left", "pedal-left"],
+        ["foot-right", "pedal-right"],
+      ] as const) {
+        const fb = probe.box(f);
+        const pb = probe.box(p);
+        if (fb && pb && Math.hypot(fb.cx - pb.cx, fb.cy - pb.cy) <= radius * 0.4) planted++;
+      }
+      if (planted === 2) {
+        a += 2;
+        notesA.push("双脚踩踏");
+      } else if (planted === 1) {
+        a += 1;
+        notesA.push("单脚踩踏");
+      } else notesA.push("脚不在脚踏上");
+
+      // 4. 画面内 2 分（整体包围盒与 viewBox 求交，容差 8px 颠簸）
+      const vb = parseViewBox(raw);
+      const cb = probe.contentBox();
+      if (cb) {
+        const pad = 8;
+        const ix =
+          Math.max(0, Math.min(cb.x + cb.w, vb.minX + vb.w + pad) - Math.max(cb.x, vb.minX - pad));
+        const iy =
+          Math.max(0, Math.min(cb.y + cb.h, vb.minY + vb.h + pad) - Math.max(cb.y, vb.minY - pad));
+        const frac = (ix * iy) / (cb.w * cb.h);
+        if (frac >= 0.98) {
+          a += 2;
+          notesA.push("画面内");
+        } else if (frac >= 0.85) {
+          a += 1;
+          notesA.push(`小幅出框（${Math.round(frac * 100)}% 在框内）`);
+        } else notesA.push(`大幅出框（${Math.round(frac * 100)}% 在框内）`);
+      } else notesA.push("无可渲染图形");
+
+      // 5. 鹈鹕形态 2 分（长扁喙 / 喉囊在喙下 / 身体占比）
+      const body = probe.box("pelican-body");
+      const beak = probe.box("pelican-beak");
+      const pouch = probe.box("pelican-pouch");
+      const beakLong = Boolean(beak && beak.w >= beak.h * 1.4);
+      const pouchBelow = Boolean(
+        beak && pouch && pouch.cy >= beak.cy && Math.abs(pouch.cx - beak.cx) <= beak.w + pouch.w,
+      );
+      const bodyBig = Boolean(body && beak && body.w * body.h >= beak.w * beak.h * 1.5);
+      const morphHits = [beakLong, pouchBelow, bodyBig].filter(Boolean).length;
+      if (morphHits === 3) {
+        a += 2;
+        notesA.push("鹈鹕形态（长扁喙/喉囊/身形）");
+      } else if (morphHits === 2) {
+        a += 1;
+        notesA.push("形态部分达标");
+      } else notesA.push("形态不像鹈鹕");
+
+      return { a: Math.min(10, a), b: Math.min(4, b), notesA, notesB, html, svg, geoTested: true };
+    } finally {
+      probe.cleanup();
+    }
+  }
+
+  // —— 回退：无 DOM 环境时的静态结构判分（几何未测，满分 8，通过线 6）——
   const wr = wheelRotateScore(raw);
   a += wr.pts;
   notesA.push(wr.note);
@@ -414,36 +652,8 @@ function scorePelican(text: string) {
   } else {
     notesA.push("脚踏动画不足");
   }
+  notesA.push("几何未测（无渲染环境）");
 
-  const grouped = /<g\b[^>]*transform/i.test(raw);
-  let skipGeo = grouped;
-  if (!grouped) {
-    const wheelEl = findById(raw, "wheel-rear") || findById(raw, "wheel-front");
-    const radius = wheelEl ? (attrNum(wheelEl, "r") ?? 16) : 18;
-    let planted = 0;
-    for (const [f, p] of [
-      ["foot-left", "pedal-left"],
-      ["foot-right", "pedal-right"],
-    ] as const) {
-      const ft = findById(raw, f);
-      const pd = findById(raw, p);
-      if (!ft || !pd) continue;
-      const fc = centerOf(ft);
-      const pc = centerOf(pd);
-      if (fc && pc && Math.hypot(fc.x - pc.x, fc.y - pc.y) <= radius * 0.4) planted++;
-    }
-    if (planted === 2) {
-      a += 2;
-      notesA.push("双脚踩踏");
-    } else if (planted === 1) {
-      a += 1;
-      notesA.push("单脚踩踏");
-    } else notesA.push("脚不在脚踏上");
-  } else {
-    notesA.push("几何未测（含 g transform）");
-  }
-
-  const vb = parseViewBox(raw);
   const fly = /translate\(\s*-?[4-9]\d{2,}/i.test(raw);
   if (!fly) {
     a += 2;
@@ -452,8 +662,8 @@ function scorePelican(text: string) {
 
   const beak = findById(raw, "pelican-beak");
   const pouch = findById(raw, "pelican-pouch");
-  const body = findById(raw, "pelican-body");
-  let morph = Boolean(beak && pouch && body);
+  const bodyEl = findById(raw, "pelican-body");
+  let morph = Boolean(beak && pouch && bodyEl);
   if (beak) {
     const bw = attrNum(beak, "width") ?? attrNum(beak, "rx");
     const bh = attrNum(beak, "height") ?? attrNum(beak, "ry");
@@ -464,7 +674,7 @@ function scorePelican(text: string) {
     notesA.push("鹈鹕形态");
   } else notesA.push("形态不像鹈鹕");
 
-  return { a: Math.min(10, a), b: Math.min(4, b), notesA, notesB, html, svg, skipGeo };
+  return { a: Math.min(10, a), b: Math.min(4, b), notesA, notesB, html, svg, geoTested: false };
 }
 
 function parseJsonObjects(text: string): Record<string, unknown>[] {
@@ -509,7 +719,7 @@ function pickJson(content: string): { obj: Record<string, unknown> | null; extra
 function accuracyOf(judge: LiveJudge, item: Question, content: string) {
   if (judge.type === "isolated_number") {
     const focus = extractFinal(content);
-    const ok = isolatedNumber(focus, judge.value);
+    const ok = containsNumber(focus, judge.value);
     return {
       accuracy: ok ? item.score : 0,
       detail: ok ? `最终答案命中 ${judge.value}` : `不是 ${judge.value}`,
@@ -548,12 +758,14 @@ export function judgeItem(
   if (judge.type === "pelican_html_svg") {
     const r = scorePelican(content);
     const factor = content ? speedFactor(seconds, item.timeBudget) : 0;
-    const passA = r.skipGeo ? 6 : 7;
-    const a = applyTimeBudget(r.a, seconds, 10, r.notesA, passA, r.a ? factor : 0);
-    const b = applyTimeBudget(r.b, seconds, 4, r.notesB, 4, r.b ? factor : 0);
-    if (r.skipGeo) a.tags = ["几何未测"];
+    const passA = r.geoTested ? 7 : 6;
+    const a = applyTimeBudget(r.a, seconds, 10, [...r.notesA], passA, r.a ? factor : 0);
+    const b = applyTimeBudget(r.b, seconds, 4, [...r.notesB], 4, r.b ? factor : 0);
+    if (!r.geoTested) a.tags = ["几何未测"];
+    const combined = timed(r.a + r.b, seconds, item, [...r.notesA, ...r.notesB], 14);
+    combined.ok = a.ok && b.ok;
     return {
-      ...timed(r.a + r.b, seconds, item, [...r.notesA, ...r.notesB], 14),
+      ...combined,
       svg: r.svg,
       html: r.html,
       extra: { Q16a: a, Q16b: b },
@@ -562,16 +774,4 @@ export function judgeItem(
   const base = accuracyOf(judge, item, content);
   const judged = timed(base.accuracy, seconds, item, base.detail ? [base.detail] : []);
   return { ...judged, memorized21: base.memorized21, tags: base.tags };
-}
-
-export function failIncomplete(item: Question, detail: string, tag = "超预算无产出"): Judged {
-  return {
-    ok: false,
-    score: 0,
-    accuracy: 0,
-    speedFactor: 0,
-    detail,
-    tags: [tag],
-    incomplete: tag !== "超预算无产出",
-  };
 }

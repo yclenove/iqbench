@@ -1,4 +1,6 @@
-import { MAX_SCORE, QUESTIONS, modelIq } from "./questions";
+import { MAX_SCORE, QUESTIONS, UNITS, modelIq } from "./questions";
+import { probeLine, type ProbeResult } from "./probes";
+import { baselineLine, type Baseline } from "./bench-store";
 
 export type ItemResult = {
   ok: boolean;
@@ -19,6 +21,8 @@ export type ModelResult = {
   max: number;
   seconds: number;
   iq?: number;
+  probe?: ProbeResult;
+  baseline?: Baseline;
 };
 
 export type ReportMeta = {
@@ -59,15 +63,15 @@ function rankLabel(pct: number) {
 function dimStats(results: Record<string, ModelResult>) {
   const models = Object.keys(results);
   return QUESTIONS.dimensions.map((d) => {
+    const units = UNITS.filter((u) => u.dim === d.id);
     const perModel = models.map((m) => {
       let got = 0;
       let max = 0;
-      QUESTIONS.items.forEach((i) => {
-        if (i.dim !== d.id) return;
-        const it = results[m].items[i.id];
+      units.forEach((u) => {
+        const it = results[m].items[u.id];
         if (!it) return;
         got += it.score;
-        max += i.score;
+        max += u.score;
       });
       return { model: m, got, max, pct: max ? Math.round((100 * got) / max) : 0 };
     });
@@ -164,7 +168,7 @@ export function buildReportHtml(
           const acc = it.accuracy ?? it.score;
           const spd = it.speedFactor ?? 1;
           const art =
-            q.id === "Q8" && (it.html || it.svg)
+            q.id === "Q16" && (it.html || it.svg)
               ? `<div class="art">${stripScripts(it.svg || "")}</div>`
               : "";
           return `<article class="q">
@@ -182,12 +186,23 @@ export function buildReportHtml(
           </article>`;
         })
         .join("");
+      const probe = r.probe
+        ? `<p class="probe">渠道鉴定（不计分）：${esc(probeLine(r.probe))}<br/>${r.probe.rows
+            .map((row) => `${esc(row.quarter)}${row.ok ? "✓" : row.unsure ? "?" : "✗"}`)
+            .join(" · ")}</p>`
+        : "";
+      const baseline = r.baseline
+        ? `<p class="probe${r.baseline.suspect ? " suspect" : ""}">全网对照：${esc(
+            baselineLine(r.iq ?? modelIq(r.items).iq, r.baseline),
+          )}</p>`
+        : "";
       return `<section class="chapter">
         <div class="ch-head">
           <span class="rank-lg">${String(i + 1).padStart(2, "0")}</span>
           <div>
             <h2>${esc(m)}</h2>
             <p>${r.total}/${r.max} 分 · ${pct}% · ${esc(b.name)} · 总耗时 ${r.seconds.toFixed(1)}s</p>
+            ${probe}${baseline}
           </div>
         </div>
         ${rows}
@@ -197,7 +212,7 @@ export function buildReportHtml(
 
   const gallery = models
     .map((m) => {
-      const it = results[m].items.Q8;
+      const it = results[m].items.Q16;
       if (!it) return "";
       const inner = stripScripts(it.svg || "");
       return `<figure>
@@ -284,6 +299,8 @@ export function buildReportHtml(
   .rank-lg { font-family: "IBM Plex Mono", monospace; font-size: 28px; color: var(--gold); line-height: 1; }
   .ch-head h2 { margin: 0; }
   .ch-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .ch-head p.probe { font-size: 12px; line-height: 1.6; }
+  .ch-head p.probe.suspect { color: var(--bad); font-weight: 600; }
   .q { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .q header { display: flex; justify-content: space-between; gap: 12px; }
   .qid { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--gold); }
@@ -329,7 +346,7 @@ export function buildReportHtml(
     <header class="cover">
       <div class="kicker">LLM IQ Bench · Confidential lab note</div>
       <h1>模型智商测评报告</h1>
-      <p class="lede">bench v6.2。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
+      <p class="lede">bench v7。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
       <div class="meta-row">
         <div><span>生成时间</span><b>${esc(generatedAt)}</b></div>
         <div><span>接口主机</span><b>${esc(host)}</b></div>
@@ -341,7 +358,7 @@ export function buildReportHtml(
     <div class="hero">
       <div class="stat">
         <div class="kicker">平均智商指数</div>
-        <div class="n">${avgIq}<small> / 160</small></div>
+        <div class="n">${avgIq}<small> / 145</small></div>
         <p>${avgPct}% · 档位「${esc(band.name)}」<br>${esc(band.note)}</p>
       </div>
       <div class="stat">
@@ -369,8 +386,8 @@ export function buildReportHtml(
     </div>
 
     <h2>鹈鹕骑自行车</h2>
-    <p class="lede">Q8 必须是 SVG SMIL 循环动画：鹈鹕特征齐全、脚踩在脚踏上、坐标不飞出画面。下列抽出的是静态 SVG 结构（动画需下载报告后用浏览器打开）。</p>
-    <div class="gallery">${gallery || "<p>本轮没有 Q8 结果</p>"}</div>
+    <p class="lede">Q16 必须是 SVG SMIL 循环动画：鹈鹕特征齐全、脚踩在脚踏上、坐标不飞出画面。下列抽出的是静态 SVG 结构（动画需下载报告后用浏览器打开）。</p>
+    <div class="gallery">${gallery || "<p>本轮没有 Q16 结果</p>"}</div>
 
     ${modelChapters}
 

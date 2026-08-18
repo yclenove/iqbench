@@ -14,18 +14,35 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
 import { extractHtml, extractSvg, gallerySrcDoc, judgeItem } from "@/lib/judge";
 import { listModels } from "@/lib/proxy";
-import { streamChat } from "@/lib/stream-chat";
+import { streamChat, withRetry } from "@/lib/stream-chat";
 import { buildReportHtml, downloadReport } from "@/lib/report";
 import {
+  baselineLine,
+  baselineVerdict,
   hostOf,
   keyFp,
   keyHint,
   makeRun,
   saveRun,
   wipeLegacy,
+  type Baseline,
   type BenchRun,
 } from "@/lib/bench-store";
-import { listCloudRuns, saveCloudRun } from "@/lib/bench-db";
+import { listCloudRuns, modelBaselines, saveCloudRun } from "@/lib/bench-db";
+import {
+  IDENTITY_QUESTION,
+  JUICE_QUESTION,
+  KNOWLEDGE_LADDER,
+  PROBE_SYSTEM,
+  judgeJuice,
+  judgeKnowledge,
+  ladderAgeDays,
+  probeLine,
+  summarizeProbe,
+  takeIdentity,
+  type ProbeResult,
+  type ProbeRow,
+} from "@/lib/probes";
 import { BenchArchive } from "@/components/bench-archive";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -53,6 +70,8 @@ type ModelResult = {
   iqLo?: number;
   iqHi?: number;
   equalRate?: number;
+  probe?: ProbeResult;
+  baseline?: Baseline;
 };
 
 function AuthSlot() {
@@ -77,6 +96,7 @@ function Home() {
   const [apiKey, setApiKey] = useState("");
   const [rememberKey, setRememberKey] = useState(false);
   const [workers, setWorkers] = useState(3);
+  const [probeOn, setProbeOn] = useState(true);
   const [models, setModels] = useState<ModelOpt[]>([]);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState("就绪");
@@ -100,9 +120,11 @@ function Home() {
       const c = JSON.parse(localStorage.getItem("iqbench_cfg") || "{}") as {
         base?: string;
         workers?: number;
+        probe?: boolean;
       };
       if (c.base) setBaseUrl(c.base);
       if (c.workers) setWorkers(Math.min(4, Math.max(1, c.workers)));
+      if (typeof c.probe === "boolean") setProbeOn(c.probe);
       const sessionKey = sessionStorage.getItem("iqbench_key");
       if (sessionKey) {
         setApiKey(sessionKey);
@@ -134,7 +156,7 @@ function Home() {
 
   useEffect(() => {
     if (!user) return;
-    listCloudRuns()
+    withRetry(() => listCloudRuns())
       .then((cloud) => {
         cloud.forEach((r) => {
           if (r?.id && r.models) saveRun(r);
@@ -153,7 +175,7 @@ function Home() {
   const append = (line: string) => setLog((s) => s + line + "\n");
 
   const saveCfg = () => {
-    localStorage.setItem("iqbench_cfg", JSON.stringify({ base: baseUrl, workers }));
+    localStorage.setItem("iqbench_cfg", JSON.stringify({ base: baseUrl, workers, probe: probeOn }));
     if (rememberKey && apiKey) sessionStorage.setItem("iqbench_key", apiKey);
     else sessionStorage.removeItem("iqbench_key");
   };
@@ -164,9 +186,9 @@ function Home() {
     saveCfg();
     setStatus("拉取模型中…");
     try {
-      const data = await listModels({
-        data: { baseUrl: baseUrl.trim(), apiKey: apiKey.trim() },
-      });
+      const data = await withRetry(() =>
+        listModels({ data: { baseUrl: baseUrl.trim(), apiKey: apiKey.trim() } }),
+      );
       setModels(data.models);
       const next: Record<string, boolean> = {};
       data.models.forEach((m) => {
@@ -207,7 +229,7 @@ function Home() {
     setResults({ ...nextResults });
 
     const jobs = selected.flatMap((model) => QUESTIONS.items.map((q) => ({ model, q })));
-    append(`共 ${jobs.length} 题，${workers} 路并行 · bench v6`);
+    append(`共 ${jobs.length} 题，${workers} 路并行 · bench v7`);
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -232,7 +254,7 @@ function Home() {
             apiKey: apiKey.trim(),
             model,
             messages: [
-              { role: "system", content: QUESTIONS.system },
+              { role: "system", content: q.system ?? QUESTIONS.system },
               { role: "user", content: inst.prompt },
             ],
             signal: ac.signal,
@@ -244,7 +266,8 @@ function Home() {
               append(`  ${tag} 网络抖动，重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
             },
           });
-          content = (resp.content || "") + (resp.reasoning ? "\n" + resp.reasoning : "");
+          // 只对正文判分；思维链里的草稿答案不能覆盖最终答案，仅当正文为空时回退
+          content = (resp.content || "").trim() ? (resp.content || "") : (resp.reasoning || "");
           preview = (resp.content || "").slice(0, 2500);
           if (!content.trim() && !stopRef.current) {
             const again = await streamChat({
@@ -252,7 +275,7 @@ function Home() {
               apiKey: apiKey.trim(),
               model,
               messages: [
-                { role: "system", content: QUESTIONS.compactSystem },
+                { role: "system", content: q.system ?? QUESTIONS.compactSystem },
                 { role: "user", content: inst.prompt },
               ],
               signal: ac.signal,
@@ -264,7 +287,7 @@ function Home() {
                 append(`  ${tag} 压缩重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
               },
             });
-            content = (again.content || "") + (again.reasoning ? "\n" + again.reasoning : "");
+            content = (again.content || "").trim() ? (again.content || "") : (again.reasoning || "");
             preview = (again.content || "").slice(0, 2500);
           }
         } catch (e) {
@@ -328,12 +351,95 @@ function Home() {
 
     await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, () => worker()));
 
+    if (probeOn && !stopRef.current) {
+      setStatus("渠道鉴定中…");
+      append(`渠道鉴定（不计分）：知识阶梯 ${KNOWLEDGE_LADDER.length} 问 + juice + 身份自报`);
+      const age = ladderAgeDays();
+      if (age > 90) {
+        append(`  ⚠ 知识阶梯最新条目距今 ${age} 天，联网探测已失效，建议在 src/lib/probes.ts 补新事件`);
+      }
+      const probeModels = [...selected];
+      let probeCursor = 0;
+      // 探针都是琐碎回忆题，单题限时，防止推理型渠道无限磨
+      const PROBE_TIMEOUT_MS = 90_000;
+
+      async function askProbe(model: string, tag: string, question: string) {
+        try {
+          const resp = await streamChat({
+            baseUrl: baseUrl.trim(),
+            apiKey: apiKey.trim(),
+            model,
+            messages: [
+              { role: "system", content: PROBE_SYSTEM },
+              { role: "user", content: question },
+            ],
+            signal: AbortSignal.any([ac.signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]),
+            onDelta: ({ content: c, reasoning: r }) => {
+              const shown = (r ? `【思考】${r.slice(-160)}\n` : "") + c.slice(-300);
+              setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
+            },
+          });
+          return (resp.content || "").trim() ? resp.content : resp.reasoning || "";
+        } catch {
+          return "";
+        }
+      }
+
+      async function probeWorker() {
+        while (probeCursor < probeModels.length && !stopRef.current) {
+          const model = probeModels[probeCursor];
+          probeCursor += 1;
+          if (!model) break;
+          const tag = `${model}/鉴定`;
+          const rows: ProbeRow[] = [];
+          for (const p of KNOWLEDGE_LADDER) {
+            if (stopRef.current) break;
+            rows.push(judgeKnowledge(p, await askProbe(model, tag, p.question)));
+          }
+          if (stopRef.current) break;
+          const juice = judgeJuice(await askProbe(model, tag, JUICE_QUESTION));
+          const identity = takeIdentity(await askProbe(model, tag, IDENTITY_QUESTION));
+          const probe = summarizeProbe(rows, juice, identity);
+          nextResults[model].probe = probe;
+          setResults({ ...nextResults });
+          setLiveJobs((prev) => {
+            const copy = { ...prev };
+            delete copy[tag];
+            return copy;
+          });
+          append(`  ${model} 鉴定：${probeLine(probe)}`);
+        }
+      }
+
+      await Promise.all(
+        Array.from({ length: Math.min(workers, probeModels.length) }, () => probeWorker()),
+      );
+    }
+
+    // 降智对照：跟全网同名模型的历史分布比（先比后传，本次成绩不掺进基线）
+    if (!stopRef.current) {
+      try {
+        const base = await withRetry(() => modelBaselines({ data: selected }), 2);
+        for (const b of base) {
+          const bucket = nextResults[b.model];
+          if (!bucket || b.runs < 3) continue;
+          bucket.baseline = baselineVerdict(bucket.iq, b);
+          append(
+            `  ${b.model} 对照：${baselineLine(bucket.iq, bucket.baseline)}${bucket.baseline.suspect ? " ⚠" : ""}`,
+          );
+        }
+        setResults({ ...nextResults });
+      } catch {
+        append("全网对照拉取失败，跳过（不影响成绩）");
+      }
+    }
+
     if (Object.keys(nextResults).length) {
       const finished = makeRun(baseUrl, apiKey, nextResults);
       saveRun(finished);
       setHistTick((n) => n + 1);
       if (user) {
-        saveCloudRun({ data: finished }).catch(() => {
+        withRetry(() => saveCloudRun({ data: finished })).catch(() => {
           /* 游客不同步 */
         });
       }
@@ -395,13 +501,14 @@ function Home() {
   }, [results, modelNames]);
 
   const liveEntries = Object.entries(liveJobs);
+  const ladderAge = useMemo(() => ladderAgeDays(), []);
 
   return (
     <main className="min-h-screen bg-bg text-fg">
       <header className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6 sm:py-6">
         <div className="min-w-0">
           <p className="font-mono text-[10px] tracking-[0.18em] text-primary uppercase sm:text-xs sm:tracking-[0.2em]">
-            思考 xhigh · bench v6.2 · 100=对一半
+            思考 xhigh · bench v7 · 100=对一半
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">模型智商测评台</h1>
           <p className="mt-2 max-w-xl text-sm text-muted">
@@ -466,6 +573,22 @@ function Home() {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="inline-flex items-start gap-2 leading-5">
+              <input
+                type="checkbox"
+                className="mt-0.5 shrink-0"
+                checked={probeOn}
+                onChange={(e) => setProbeOn(e.target.checked)}
+              />
+              <span>
+                渠道鉴定（知识新旧 / juice / 联网嫌疑，不计分）
+                {probeOn && ladderAge > 90 ? (
+                  <span className="ml-1 text-bad">
+                    ⚠ 知识阶梯最新条目距今 {ladderAge} 天，建议补新事件
+                  </span>
+                ) : null}
+              </span>
             </label>
           </div>
           <div className="btn-grid mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
@@ -648,6 +771,20 @@ function Home() {
                       {r.total}/{r.max}
                       {r.iqLo != null ? ` · ${r.iqLo}–${r.iqHi}` : ""}
                     </p>
+                    {r.probe ? (
+                      <p className="mt-1 break-all text-[11px] leading-4 text-muted">
+                        鉴定：{probeLine(r.probe)}
+                      </p>
+                    ) : null}
+                    {r.baseline ? (
+                      <p
+                        className={`mt-1 break-all text-[11px] leading-4 ${
+                          r.baseline.suspect ? "text-bad" : "text-muted"
+                        }`}
+                      >
+                        对照：{baselineLine(r.iq, r.baseline)}
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-1">
                       {UNITS.map((u) => {
                         const it = r.items[u.id];
@@ -809,6 +946,36 @@ function Home() {
                       </div>
                     );
                   })}
+                  {r.baseline ? (
+                    <p
+                      className={`mt-3 text-xs ${r.baseline.suspect ? "font-medium text-bad" : "text-muted"}`}
+                    >
+                      全网对照：{baselineLine(r.iq, r.baseline)}
+                    </p>
+                  ) : null}
+                  {r.probe ? (
+                    <div className="mt-3 rounded-lg bg-surface-2 p-3">
+                      <p className="text-sm font-medium">渠道鉴定（不计分）</p>
+                      <p className="mt-1 break-all text-xs text-muted">{probeLine(r.probe)}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {r.probe.rows.map((row) => (
+                          <span
+                            key={row.id}
+                            title={`${row.event} · 答：${row.answer || "（无回复）"}`}
+                            className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                              row.ok
+                                ? "bg-ok/15 text-ok"
+                                : row.unsure
+                                  ? "bg-bg text-muted"
+                                  : "bg-bad/15 text-bad"
+                            }`}
+                          >
+                            {row.quarter} {row.ok ? "✓" : row.unsure ? "?" : "✗"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </details>
               );
             })
@@ -833,6 +1000,8 @@ function Home() {
                 max: m.max,
                 seconds: m.seconds,
                 iq: m.iq ?? modelIq(m.items).iq,
+                probe: m.probe,
+                baseline: m.baseline,
                 items: Object.fromEntries(
                   Object.entries(m.items).map(([id, it]) => [
                     id,

@@ -36,8 +36,9 @@ export const saveCloudRun = createServerFn({ method: "POST" })
     for (const m of run.models) {
       await sql.query(
         `insert into bench_public_scores
-          (id, user_id, host, model, iq, score, max_score, seconds)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
+          (id, user_id, host, model, iq, score, max_score, seconds,
+           freshness, juice, web_suspect, iq_suspect)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          on conflict (id) do nothing`,
         [
           `${run.id}:${m.id}`,
@@ -48,6 +49,10 @@ export const saveCloudRun = createServerFn({ method: "POST" })
           m.total,
           m.max,
           m.seconds,
+          m.probe?.freshness ?? null,
+          m.probe?.juice.value ?? null,
+          Boolean(m.probe?.webSuspect),
+          Boolean(m.baseline?.suspect),
         ],
       );
     }
@@ -77,6 +82,8 @@ export type PublicModelRow = {
   best_score: number;
   best_seconds: number;
   runs: number;
+  /** 全网见过的最新知识季度（YYYYQN 字典序即时间序） */
+  freshness: string | null;
 };
 
 export type PublicChannelRow = {
@@ -85,7 +92,39 @@ export type PublicChannelRow = {
   models: number;
   avg_iq: number;
   best_iq: number;
+  web_suspect: boolean;
+  juice_seen: boolean;
+  iq_suspect: boolean;
 };
+
+export type BaselineRow = {
+  model: string;
+  runs: number;
+  med_iq: number;
+  p25_iq: number;
+  best_iq: number;
+};
+
+/** 全网分数基线：给降智对照用，公开数据，无需登录 */
+export const modelBaselines = createServerFn({ method: "POST" })
+  .validator((models: string[]) =>
+    (Array.isArray(models) ? models : []).slice(0, 30).map((m) => String(m).slice(0, 200)),
+  )
+  .handler(async ({ data: models }) => {
+    if (!models.length) return [] as BaselineRow[];
+    const sql = await getSql();
+    return sql.query<BaselineRow>(
+      `select model,
+              count(*)::int as runs,
+              round(percentile_cont(0.5) within group (order by iq))::int as med_iq,
+              round(percentile_cont(0.25) within group (order by iq))::int as p25_iq,
+              max(iq)::int as best_iq
+       from bench_public_scores
+       where model = any($1::text[])
+       group by model`,
+      [models],
+    );
+  });
 
 export const publicModelBoard = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
@@ -94,7 +133,8 @@ export const publicModelBoard = createServerFn({ method: "GET" }).handler(async 
            max(iq)::int as best_iq,
            max(score)::int as best_score,
            min(seconds)::float as best_seconds,
-           count(*)::int as runs
+           count(*)::int as runs,
+           max(freshness) as freshness
     from bench_public_scores
     group by model
     order by best_iq desc, best_seconds asc
@@ -109,7 +149,10 @@ export const publicChannelBoard = createServerFn({ method: "GET" }).handler(asyn
            count(*)::int as runs,
            count(distinct model)::int as models,
            round(avg(iq))::int as avg_iq,
-           max(iq)::int as best_iq
+           max(iq)::int as best_iq,
+           bool_or(web_suspect) as web_suspect,
+           bool_or(juice is not null) as juice_seen,
+           bool_or(iq_suspect) as iq_suspect
     from bench_public_scores
     group by host
     order by avg_iq desc, best_iq desc

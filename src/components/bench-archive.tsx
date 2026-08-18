@@ -167,6 +167,12 @@ export function BenchArchive({
   );
 }
 
+function Flags({ web, juice, dumb }: { web: boolean; juice: boolean; dumb: boolean }) {
+  const tags = [web && "联网", juice && "juice", dumb && "降智"].filter(Boolean) as string[];
+  if (!tags.length) return <span className="text-muted">—</span>;
+  return <span className="text-bad">⚠ {tags.join(" / ")}</span>;
+}
+
 function ModelTable({ title, rows }: { title: string; rows: BoardRow[] }) {
   return (
     <section className="rounded-xl border border-border bg-surface p-4">
@@ -185,6 +191,7 @@ function ModelTable({ title, rows }: { title: string; rows: BoardRow[] }) {
                 <th className="pb-2 font-medium">模型</th>
                 <th className="pb-2 font-medium">最佳 IQ</th>
                 <th className="pb-2 font-medium">卷面</th>
+                <th className="pb-2 font-medium">知识</th>
                 <th className="pb-2 font-medium">次数</th>
               </tr>
             </thead>
@@ -197,6 +204,7 @@ function ModelTable({ title, rows }: { title: string; rows: BoardRow[] }) {
                   <td className="py-2 tabular-nums">
                     {r.best}/{r.max}
                   </td>
+                  <td className="py-2 text-xs tabular-nums text-muted">{r.freshness ?? "—"}</td>
                   <td className="py-2 tabular-nums">{r.runs}</td>
                 </tr>
               ))}
@@ -226,6 +234,7 @@ function ChannelTable({ title, rows }: { title: string; rows: ChannelRow[] }) {
                 <th className="pb-2 font-medium">渠道 / 主机</th>
                 <th className="pb-2 font-medium">均 IQ</th>
                 <th className="pb-2 font-medium">巅峰</th>
+                <th className="pb-2 font-medium">鉴定</th>
                 <th className="pb-2 font-medium">场次</th>
               </tr>
             </thead>
@@ -237,6 +246,9 @@ function ChannelTable({ title, rows }: { title: string; rows: ChannelRow[] }) {
                   <td className="py-2 tabular-nums">{r.avgIq}</td>
                   <td className="py-2 text-xs">
                     {r.bestIq} · {r.topModel}
+                  </td>
+                  <td className="py-2 text-xs">
+                    <Flags web={r.webSuspect} juice={r.juiceSeen} dumb={r.iqSuspect} />
                   </td>
                   <td className="py-2 tabular-nums">{r.runs}</td>
                 </tr>
@@ -267,6 +279,7 @@ function PublicModelTable({ title, rows }: { title: string; rows: PublicModelRow
                 <th className="pb-2 font-medium">模型</th>
                 <th className="pb-2 font-medium">最佳 IQ</th>
                 <th className="pb-2 font-medium">卷面</th>
+                <th className="pb-2 font-medium">知识</th>
                 <th className="pb-2 font-medium">样本</th>
               </tr>
             </thead>
@@ -277,6 +290,7 @@ function PublicModelTable({ title, rows }: { title: string; rows: PublicModelRow
                   <td className="py-2 font-medium">{r.model}</td>
                   <td className="py-2 tabular-nums">{r.best_iq}</td>
                   <td className="py-2 tabular-nums">{r.best_score}</td>
+                  <td className="py-2 text-xs tabular-nums text-muted">{r.freshness ?? "—"}</td>
                   <td className="py-2 tabular-nums">{r.runs}</td>
                 </tr>
               ))}
@@ -306,6 +320,7 @@ function PublicChannelTable({ title, rows }: { title: string; rows: PublicChanne
                 <th className="pb-2 font-medium">渠道</th>
                 <th className="pb-2 font-medium">均 IQ</th>
                 <th className="pb-2 font-medium">巅峰 IQ</th>
+                <th className="pb-2 font-medium">鉴定</th>
                 <th className="pb-2 font-medium">模型数</th>
               </tr>
             </thead>
@@ -316,6 +331,9 @@ function PublicChannelTable({ title, rows }: { title: string; rows: PublicChanne
                   <td className="py-2 font-medium">{r.host}</td>
                   <td className="py-2 tabular-nums">{r.avg_iq}</td>
                   <td className="py-2 tabular-nums">{r.best_iq}</td>
+                  <td className="py-2 text-xs">
+                    <Flags web={r.web_suspect} juice={r.juice_seen} dumb={r.iq_suspect} />
+                  </td>
                   <td className="py-2 tabular-nums">{r.models}</td>
                 </tr>
               ))}
