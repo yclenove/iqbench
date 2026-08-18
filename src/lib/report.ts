@@ -1,4 +1,5 @@
 import { MAX_SCORE, QUESTIONS, UNITS, modelIq } from "./questions";
+import { extractSvg } from "./judge";
 import { probeLine, type ProbeResult } from "./probes";
 import { baselineLine, type Baseline } from "./bench-store";
 
@@ -30,10 +31,9 @@ export type ReportMeta = {
   generatedAt: string;
 };
 
-function stripScripts(html: string) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/\son\w+=(?:"[^"]*"|'[^']*')/gi, "");
+function pelicanOf(it?: ItemResult) {
+  if (!it) return "";
+  return extractSvg(it.svg || "") || extractSvg(it.html || "") || extractSvg(it.preview || "");
 }
 
 function esc(s: string) {
@@ -167,10 +167,10 @@ export function buildReportHtml(
           const preview = esc((it.preview || "").slice(-900));
           const acc = it.accuracy ?? it.score;
           const spd = it.speedFactor ?? 1;
-          const art =
-            q.id === "Q16" && (it.html || it.svg)
-              ? `<div class="art">${stripScripts(it.svg || "")}</div>`
-              : "";
+          const artSvg = q.id === "Q16" ? pelicanOf(it) : "";
+          const art = artSvg
+            ? `<div class="art">${artSvg.replace(/<script[\s\S]*?<\/script>/gi, "")}</div>`
+            : "";
           return `<article class="q">
             <header>
               <div>
@@ -212,11 +212,12 @@ export function buildReportHtml(
 
   const gallery = models
     .map((m) => {
-      const it = results[m].items.Q16;
+      const it = results[m].items.Q16 || results[m].items.Q16a;
       if (!it) return "";
-      const inner = stripScripts(it.svg || "");
+      const inner = pelicanOf(it).replace(/<script[\s\S]*?<\/script>/gi, "");
+      const extra = results[m].items.Q16a || results[m].items.Q16;
       return `<figure>
-        <figcaption>${esc(m)} · ${it.score}/14 · ${esc(it.detail)}</figcaption>
+        <figcaption>${esc(m)} · ${extra?.score ?? it.score}/14 · ${esc(it.detail || extra?.detail || "")}</figcaption>
         <div class="frame">${inner || '<p class="empty">无 SVG</p>'}</div>
       </figure>`;
     })
@@ -243,7 +244,7 @@ export function buildReportHtml(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>模型智商测评报告</title>
+<title>猛蹬测评报告</title>
 <style>
   @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap");
   :root {
@@ -292,8 +293,9 @@ export function buildReportHtml(
   .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   figure { margin: 0; }
   figcaption { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-  .frame { background: #fff; border: 1px solid var(--line); border-radius: 12px; min-height: 180px; padding: 8px; }
-  .frame svg { width: 100%; height: 200px; }
+  .frame { background: #d9eefc; border: 1px solid var(--line); border-radius: 12px; aspect-ratio: 4/3; overflow: hidden; }
+  .frame svg { width: 100%; height: 100%; display: block; }
+  .frame .empty { padding: 16px; color: var(--muted); }
   .chapter { break-inside: avoid; margin-top: 36px; }
   .ch-head { display: flex; gap: 14px; align-items: flex-start; border-top: 1px solid var(--ink); padding-top: 16px; }
   .rank-lg { font-family: "IBM Plex Mono", monospace; font-size: 28px; color: var(--gold); line-height: 1; }
@@ -344,9 +346,9 @@ export function buildReportHtml(
       <button onclick="window.print()">打印 / 存为 PDF</button>
     </div>
     <header class="cover">
-      <div class="kicker">LLM IQ Bench · Confidential lab note</div>
-      <h1>模型智商测评报告</h1>
-      <p class="lede">bench v7。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
+      <div class="kicker">猛蹬 · 测模型会不会自己想</div>
+      <h1>猛蹬测评报告</h1>
+      <p class="lede">bench v7。测模型会不会自己想。IQ = 100 + 90×(加权通过率−0.5)。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
       <div class="meta-row">
         <div><span>生成时间</span><b>${esc(generatedAt)}</b></div>
         <div><span>接口主机</span><b>${esc(host)}</b></div>
@@ -386,7 +388,7 @@ export function buildReportHtml(
     </div>
 
     <h2>鹈鹕骑自行车</h2>
-    <p class="lede">Q16 必须是 SVG SMIL 循环动画：鹈鹕特征齐全、脚踩在脚踏上、坐标不飞出画面。下列抽出的是静态 SVG 结构（动画需下载报告后用浏览器打开）。</p>
+    <p class="lede">Q16 须为手写 SVG 动画。下图是从作答里抽出的画面，用浏览器打开本报告即可看轮子和脚踏。</p>
     <div class="gallery">${gallery || "<p>本轮没有 Q16 结果</p>"}</div>
 
     ${modelChapters}
@@ -395,7 +397,7 @@ export function buildReportHtml(
     ${bank}
 
     <footer>
-      模型智商测评台 · 主机 ${esc(host)} · ${esc(generatedAt)} · 评分在客户端完成，报告可离线打开。
+      猛蹬 · 主机 ${esc(host)} · ${esc(generatedAt)} · 评分在客户端完成，报告可离线打开。
     </footer>
   </div>
 </body>

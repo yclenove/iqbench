@@ -4,11 +4,9 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { ViewportLock } from "@/components/viewport-lock";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "模型智商测评台";
+const APP_NAME = "猛蹬";
 const host = import.meta.env.VITE_PUBLIC_HOSTNAME;
-const ogImage = host
-  ? `https://og.grok.me/v1/card.png?host=${encodeURIComponent(host)}&title=${encodeURIComponent(APP_NAME)}`
-  : undefined;
+const ogImage = host ? `https://${host}/og.png` : "/og.png";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -21,22 +19,21 @@ export const Route = createRootRoute({
       { name: "x5-orientation", content: "portrait" },
       { name: "screen-orientation", content: "portrait" },
       { title: APP_NAME },
+      { name: "description", content: "猛蹬 · 测模型会不会自己想" },
       { name: "apple-mobile-web-app-title", content: APP_NAME },
       { name: "theme-color", content: "#1a1712" },
       { name: "twitter:card", content: "summary_large_image" },
-      ...(ogImage
-        ? [
-            { property: "og:image", content: ogImage },
-            { property: "og:image:width", content: "1200" },
-            { property: "og:image:height", content: "630" },
-          ]
-        : []),
+      { property: "og:title", content: APP_NAME },
+      { property: "og:description", content: "测模型会不会自己想" },
+      { property: "og:image", content: ogImage },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "apple-touch-icon", href: "/icon-180.png" },
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
     ],
   }),
   component: () => (

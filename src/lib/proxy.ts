@@ -72,7 +72,7 @@ async function httpJson(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 IQBench/1.0",
+        "User-Agent": "Mozilla/5.0 Mengdeng/1.0",
       },
       body: payload == null ? undefined : JSON.stringify(payload),
       signal: ctrl.signal,

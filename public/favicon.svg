@@ -1,6 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#1a1712"/>
-  <path d="M7 22 V10 h5.2 c3 0 4.8 1.7 4.8 4.2 0 2.6-1.8 4.3-4.8 4.3H10.2V22H7zm3.2-6.2h1.7c1.3 0 2-.6 2-1.6s-.7-1.6-2-1.6H10.2v3.2z" fill="#d4a24c"/>
-  <circle cx="23" cy="13" r="3.2" fill="none" stroke="#efe6d4" stroke-width="1.6"/>
-  <path d="M20.6 15.6 L24.8 22" stroke="#efe6d4" stroke-width="1.6" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="猛蹬">
+  <rect width="128" height="128" rx="28" fill="#1a1712"/>
+  <ellipse cx="52" cy="62" rx="22" ry="16" fill="#efe6d4"/>
+  <circle cx="72" cy="50" r="11" fill="#efe6d4"/>
+  <ellipse cx="86" cy="52" rx="16" ry="5.5" fill="#d4a24c"/>
+  <path d="M74 56 q12 10 22 6" fill="#f0d48a"/>
+  <circle cx="75.5" cy="48" r="1.6" fill="#1a1712"/>
+  <g fill="none" stroke="#d4a24c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="40" cy="92" r="14"/>
+    <circle cx="88" cy="92" r="14"/>
+    <path d="M40 92 L58 70 L82 70 L88 92"/>
+    <path d="M58 70 L52 56"/>
+    <path d="M70 70 L70 82 L62 88"/>
+    <circle cx="70" cy="82" r="3.2"/>
+  </g>
 </svg>

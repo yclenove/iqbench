@@ -28,7 +28,7 @@ export const Route = createFileRoute("/api/bench/chat")({
           headers: {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 IQBench/1.0",
+            "User-Agent": "Mozilla/5.0 Mengdeng/1.0",
             Accept: "text/event-stream",
           },
           body: JSON.stringify({

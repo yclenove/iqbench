@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="docs/hero.svg" alt="IQBench 模型智商测评台" width="100%">
+  <img src="docs/hero.svg" alt="猛蹬 模型智商测评台" width="100%">
 </p>
 
 <p align="center">
-  <img src="docs/logo.svg" width="72" alt="IQBench mark">
+  <img src="docs/logo.svg" width="72" alt="猛蹬">
 </p>
 
-<h1 align="center">IQBench</h1>
+<h1 align="center">猛蹬</h1>
 
 <p align="center">
-  <strong>模型智商测评台</strong> · 给 OpenAI 兼容网关用的推理评测台<br>
+  <strong>模型智商测评台</strong> · 测模型会不会自己想<br>
   填地址和 Key，拉模型，一键并行。对一半是 100。
 </p>
 

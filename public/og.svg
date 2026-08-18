@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="猛蹬">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14110d"/>
+      <stop offset="1" stop-color="#241f18"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <path d="M0 560 C 200 520, 380 580, 620 540 C 860 500, 1040 570, 1200 530 V630 H0 Z" fill="#1a1712"/>
+  <text x="72" y="92" fill="#d4a24c" font-family="ui-monospace, Menlo, monospace" font-size="18" letter-spacing="5">BENCH V7 · XHIGH · 55–145</text>
+  <text x="68" y="230" fill="#f3efe4" font-family="Georgia, 'Noto Serif SC', serif" font-size="120" font-weight="700">猛蹬</text>
+  <text x="72" y="300" fill="#d4a24c" font-family="Georgia, 'Noto Serif SC', serif" font-size="32">测模型会不会自己想</text>
+  <text x="72" y="352" fill="#9a9183" font-family="Georgia, serif" font-size="22">模型智商测评台 · 对一半是 100</text>
+  <g transform="translate(720 120)">
+    <rect x="0" y="0" width="400" height="300" rx="22" fill="#d9eefc"/>
+    <rect x="0" y="248" width="400" height="52" fill="#6fa86a"/>
+    <g fill="none" stroke="#2a3a38" stroke-width="6" stroke-linecap="round">
+      <path d="M118 214 L168 150 L248 150 L278 214"/>
+      <path d="M168 150 L148 118"/>
+      <path d="M210 150 L210 188 L188 210"/>
+    </g>
+    <circle cx="118" cy="214" r="34" fill="#1c1c1c"/>
+    <circle cx="278" cy="214" r="34" fill="#1c1c1c"/>
+    <g fill="none" stroke="#8a8a8a" stroke-width="1.2">
+      <circle cx="118" cy="214" r="24"/>
+      <circle cx="278" cy="214" r="24"/>
+    </g>
+    <ellipse cx="168" cy="118" rx="38" ry="26" fill="#f4efe4" stroke="#2a3a38" stroke-width="2"/>
+    <circle cx="206" cy="98" r="18" fill="#f4efe4" stroke="#2a3a38" stroke-width="2"/>
+    <ellipse cx="242" cy="102" rx="32" ry="10" fill="#e8a05a" stroke="#2a3a38" stroke-width="1.5"/>
+    <path d="M216 108 q24 20 52 8 q-6 14 -28 14 q-20 0 -24 -22z" fill="#f3d98a"/>
+    <circle cx="212" cy="94" r="2.2" fill="#1a1712"/>
+    <ellipse cx="198" cy="168" rx="8" ry="12" fill="#e07a3a" transform="rotate(-16 198 168)"/>
+    <ellipse cx="188" cy="222" rx="8" ry="12" fill="#e07a3a" transform="rotate(20 188 222)"/>
+  </g>
+</svg>

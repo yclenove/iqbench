@@ -510,9 +510,12 @@ function Home() {
           <p className="font-mono text-[10px] tracking-[0.18em] text-primary uppercase sm:text-xs sm:tracking-[0.2em]">
             思考 xhigh · bench v7 · 100=对一半
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">模型智商测评台</h1>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+            <img src="/favicon.svg" alt="" className="size-8 rounded-lg sm:size-9" />
+            猛蹬
+          </h1>
           <p className="mt-2 max-w-xl text-sm text-muted">
-            Key 只留本标签页。IQ 55–145（100=对一半）。参数化题每次换实例。画廊是 Q16 鹈鹕。
+            模型智商测评台。测模型会不会自己想。Key 只留本标签页。
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
