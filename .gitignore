@@ -1,0 +1,39 @@
+# deps & build
+node_modules/
+dist/
+.output/
+.vinxi/
+.nitro/
+.tanstack/
+.vercel/
+*.tsbuildinfo
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# local / preview
+.project_id
+.node_modules.lock
+artifacts/
+attachments/
+screenshots/
+tmp/
+*.log
+
+# editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# sandbox-only (Grok Build internals)
+AGENTS.md
+AGENTS.project.md
+.grok/
+startup.sh

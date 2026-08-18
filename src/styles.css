@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #1a1712;
+  --color-fg: #f3efe4;
+  --color-muted: #9a9183;
+  --color-surface: #241f18;
+  --color-surface-2: #2e2820;
+  --color-border: #3d352b;
+  --color-primary: #d4a24c;
+  --color-primary-fg: #1a1408;
+  --color-ok: #7cbc7a;
+  --color-bad: #d97868;
+  --color-paper: #efe6d4;
+  --color-ink: #1c1812;
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-x: clip;
+    width: 100%;
+    max-width: 100%;
+  }
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    overflow-x: clip;
+    width: 100%;
+    max-width: 100%;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  main {
+    width: 100%;
+    max-width: min(72rem, var(--app-w, 100%));
+    margin-left: auto;
+    margin-right: auto;
+    overflow-x: clip;
+  }
+  .desk-only {
+    display: none;
+  }
+  .is-narrow .desk-only {
+    display: none !important;
+  }
+  .is-narrow .mobile-only {
+    display: block !important;
+  }
+  html:not(.is-narrow) .mobile-only {
+    display: none !important;
+  }
+  html:not(.is-narrow) .desk-only {
+    display: block;
+  }
+  .gallery-frame {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 4 / 3;
+    max-height: 240px;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: #d9eefc;
+  }
+  .is-narrow .btn-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+  .is-narrow .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .is-narrow h1,
+  .is-narrow p {
+    text-wrap: auto;
+  }
+  img,
+  svg,
+  iframe {
+    max-width: 100%;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100%;
+    font: inherit;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+    width: 100%;
+    min-width: 0;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-fg);
+    padding: 0.55rem 0.75rem;
+  }
+  select {
+    width: auto;
+    min-width: 4.5rem;
+    appearance: auto;
+  }
+  button,
+  a.btn {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 0.875rem;
+    }
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
