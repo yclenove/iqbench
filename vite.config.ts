@@ -1,5 +1,7 @@
 import type { Plugin } from "vite";
-import { defineConfig } from "vite";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { defineConfig, loadEnv } from "vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -128,11 +130,34 @@ function authPopupPlugin(): Plugin {
 // opens a second dev-server port, which breaks the single-port preview.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
-export default defineConfig(({ command }) => ({
+function linuxdoCreds(mode: string) {
+  const env = loadEnv(mode, process.cwd(), "");
+  let id = env.LINUX_DO_CLIENT_ID || process.env.LINUX_DO_CLIENT_ID || "";
+  let secret = env.LINUX_DO_CLIENT_SECRET || process.env.LINUX_DO_CLIENT_SECRET || "";
+  const extra = resolve(process.cwd(), "src/lib/linuxdo.secrets.json");
+  if (existsSync(extra)) {
+    try {
+      const j = JSON.parse(readFileSync(extra, "utf8")) as Record<string, string>;
+      id = id || j.LINUX_DO_CLIENT_ID || "";
+      secret = secret || j.LINUX_DO_CLIENT_SECRET || "";
+    } catch {
+      /* ignore */
+    }
+  }
+  return { id, secret };
+}
+
+export default defineConfig(({ command, mode }) => {
+  const linux = linuxdoCreds(mode);
+  return {
   server: {
     host: "0.0.0.0",
     port: 8080,
     strictPort: true,
+  },
+  define: {
+    "process.env.LINUX_DO_CLIENT_ID": JSON.stringify(linux.id),
+    "process.env.LINUX_DO_CLIENT_SECRET": JSON.stringify(linux.secret),
   },
   resolve: { tsconfigPaths: true },
   plugins: [
@@ -156,4 +181,5 @@ export default defineConfig(({ command }) => ({
       : []),
     viteReact(),
   ],
-}));
+};
+});

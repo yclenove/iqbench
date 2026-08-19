@@ -16,6 +16,7 @@ dist/
 *.key
 credentials.json
 src/lib/linuxdo.secrets.ts
+src/lib/linuxdo.secrets.json
 
 
 # local / preview
