@@ -12,7 +12,7 @@ import {
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { AppHeader } from "@/components/app-header";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
-import { extractHtml, extractSvg, gallerySrcDoc, isGatewayJunk, judgeItem, shortFail } from "@/lib/judge";
+import { extractHtml, extractSvg, gallerySrcDoc, isGatewayJunk, judgeItem, pickVisibleAnswer, shortFail } from "@/lib/judge";
 import { craftLine, priorCraftScores, scoreCraft } from "@/lib/svg-craft";
 import { listModels } from "@/lib/proxy";
 import { streamChat, withRetry } from "@/lib/stream-chat";
@@ -97,6 +97,7 @@ type ModelResult = {
   iqHi?: number;
   equalRate?: number;
   probe?: ProbeResult;
+  probeProgress?: import("@/lib/probes").ProbeProgress;
   baseline?: Baseline;
 };
 
@@ -121,6 +122,7 @@ function mapRun(run: BenchRun): Record<string, ModelResult> {
       seconds: m.seconds,
       iq: m.iq ?? modelIq(m.items).iq,
       probe: m.probe,
+      probeProgress: m.probeProgress,
       baseline: m.baseline,
       items: Object.fromEntries(
         Object.entries(m.items).map(([id, it]) => [
@@ -475,6 +477,7 @@ function Home() {
             ],
             signal: ac.signal,
             timeoutMs: Math.min(180_000, Math.max(25_000, q.timeBudget * 1000 + 20_000)),
+            maxTokens: 131072,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
               setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
@@ -483,20 +486,25 @@ function Home() {
               append(`  ${tag} 网络抖动，重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
             },
           });
-          // 只对正文判分；思维链里的草稿答案不能覆盖最终答案，仅当正文为空时回退
-          content = (resp.content || "").trim() ? (resp.content || "") : (resp.reasoning || "");
+          let picked = pickVisibleAnswer(resp.content || "", resp.reasoning || "", resp.finish);
+          content = picked.text;
           preview = (resp.content || "").slice(0, 2500);
-          if (!content.trim() && !stopRef.current) {
+          if ((!content.trim() || picked.cut) && !stopRef.current) {
+            append(`  ${tag} ${picked.cut ? "思考/输出被截断" : "正文为空"}，压缩重试`);
             const again = await streamChat({
               baseUrl: baseUrl.trim(),
               apiKey: apiKey.trim(),
               model,
               messages: [
-                { role: "system", content: q.system ?? QUESTIONS.compactSystem },
+                {
+                  role: "system",
+                  content: q.id === "Q16" ? QUESTIONS.drawCompact : QUESTIONS.compactSystem,
+                },
                 { role: "user", content: inst.prompt },
               ],
               signal: ac.signal,
-              timeoutMs: Math.min(90_000, Math.max(20_000, q.timeBudget * 500 + 15_000)),
+              timeoutMs: Math.min(120_000, Math.max(20_000, q.timeBudget * 700 + 15_000)),
+              maxTokens: 131072,
               onDelta: ({ content: c, reasoning: r }) => {
                 const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
                 setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
@@ -505,8 +513,25 @@ function Home() {
                 append(`  ${tag} 压缩重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
               },
             });
-            content = (again.content || "").trim() ? (again.content || "") : (again.reasoning || "");
-            preview = (again.content || "").slice(0, 2500);
+            const second = pickVisibleAnswer(again.content || "", again.reasoning || "", again.finish);
+            if (second.text.trim() && (!content.trim() || !second.cut)) {
+              content = second.text;
+              preview = (again.content || "").slice(0, 2500);
+              picked = second;
+            }
+            if (picked.cut && content.trim()) {
+              preview = `输出截断（思考未完成）\n${preview}`;
+            }
+          }
+          if (
+            picked.cut &&
+            content &&
+            q.id !== "Q16" &&
+            q.id !== "Q17" &&
+            !/(?:最终答案|答案)\s*[:：]/.test(content)
+          ) {
+            preview = `输出截断（思考未完成）\n${content.slice(0, 400)}`;
+            content = "";
           }
         } catch (e) {
           if (stopRef.current || (e instanceof Error && e.name === "AbortError")) {
@@ -594,18 +619,19 @@ function Home() {
     const skipProbe = Boolean(opts?.retryFailed);
     if (probeOn && !stopRef.current && !skipProbe) {
       setStatus("渠道鉴定中…");
-      append(`渠道鉴定（不计分）：知识阶梯 ${KNOWLEDGE_LADDER.length} 问 + juice + 身份自报`);
       const age = ladderAgeDays();
       if (age > 90) {
         append(`  ⚠ 知识阶梯最新条目距今 ${age} 天，联网探测已失效，建议在 src/lib/probes.ts 补新事件`);
       }
       const probeModels = modelIds.filter((m) => !nextResults[m]?.probe);
       if (!probeModels.length) {
-        /* already probed */
+        append("渠道鉴定已有存档，跳过");
       } else {
+      append(
+        `渠道鉴定（不计分）：${KNOWLEDGE_LADDER.length} 问知识阶梯 + juice + 身份；已做过的不重跑`,
+      );
       let probeCursor = 0;
-      // 探针都是琐碎回忆题，单题限时，防止推理型渠道无限磨
-      const PROBE_TIMEOUT_MS = 90_000;
+      const PROBE_TIMEOUT_MS = 35_000;
 
       async function askProbe(model: string, tag: string, question: string) {
         try {
@@ -617,10 +643,15 @@ function Home() {
               { role: "system", content: PROBE_SYSTEM },
               { role: "user", content: question },
             ],
-            signal: AbortSignal.any([ac.signal, AbortSignal.timeout(PROBE_TIMEOUT_MS)]),
+            signal: ac.signal,
+            timeoutMs: PROBE_TIMEOUT_MS,
+            retries: 2,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-160)}\n` : "") + c.slice(-300);
               setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
+            },
+            onRetry: (attempt, max, reason) => {
+              append(`  ${tag} 网络 ${attempt}/${max}：${reason.slice(0, 80)}`);
             },
           });
           return (resp.content || "").trim() ? resp.content : resp.reasoning || "";
@@ -635,24 +666,45 @@ function Home() {
           probeCursor += 1;
           if (!model) break;
           const tag = `${model}/鉴定`;
+          const prog = nextResults[model].probeProgress || { rows: [] };
+          const rows = [...prog.rows];
+          const have = new Set(rows.map((r) => r.id));
+          if (have.size) append(`  ${model} 鉴定续上（已有 ${have.size}/${KNOWLEDGE_LADDER.length}）`);
           setLiveJobs((prev) => ({ ...prev, [tag]: "鉴定中…" }));
-          const rows: ProbeRow[] = [];
           for (const p of KNOWLEDGE_LADDER) {
             if (stopRef.current) break;
+            if (have.has(p.id)) continue;
+            append(`  ${model} 鉴定 ${p.id} ${p.event}`);
             rows.push(judgeKnowledge(p, await askProbe(model, tag, p.question)));
+            have.add(p.id);
+            nextResults[model].probeProgress = { ...prog, rows };
+            snapDraft(modelIds, nextResults);
           }
           if (stopRef.current) break;
-          const juice = judgeJuice(await askProbe(model, tag, JUICE_QUESTION));
-          const identity = takeIdentity(await askProbe(model, tag, IDENTITY_QUESTION));
+          let juice = prog.juice;
+          if (!juice) {
+            append(`  ${model} 鉴定 juice`);
+            juice = judgeJuice(await askProbe(model, tag, JUICE_QUESTION));
+            nextResults[model].probeProgress = { rows, juice, identity: prog.identity };
+            snapDraft(modelIds, nextResults);
+          }
+          if (stopRef.current) break;
+          let identity = prog.identity;
+          if (!identity) {
+            append(`  ${model} 鉴定 身份`);
+            identity = takeIdentity(await askProbe(model, tag, IDENTITY_QUESTION));
+          }
           const probe = summarizeProbe(rows, juice, identity);
           nextResults[model].probe = probe;
+          nextResults[model].probeProgress = undefined;
           setResults({ ...nextResults });
+          snapDraft(modelIds, nextResults);
           setLiveJobs((prev) => {
             const copy = { ...prev };
             delete copy[tag];
             return copy;
           });
-          append(`  ${model} 鉴定：${probeLine(probe)}`);
+          append(`  ${model} 鉴定完成：${probeLine(probe)}`);
         }
       }
 
@@ -1329,7 +1381,12 @@ function Home() {
         </section>
 
         <section className="card p-4">
-          <p className="kicker kicker-dim mb-3">鹈鹕骑车画廊（须为踩踏 SVG 动画）</p>
+          <p className="kicker kicker-dim mb-3 flex items-center justify-between gap-2">
+            <span>鹈鹕骑车画廊（须为踩踏 SVG 动画）</span>
+            <a href="/gallery" className="font-sans text-[11px] tracking-normal text-primary hover:underline">
+              鸡你太美 →
+            </a>
+          </p>
           <div className="grid items-stretch gap-3 sm:grid-cols-2">
             {modelNames.filter((m) => results[m].items.Q16).length === 0 ? (
               <p className="text-sm text-muted">Q16 完成后在此渲染</p>

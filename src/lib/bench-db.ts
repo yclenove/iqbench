@@ -4,6 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { isAdminUser } from "@/lib/admin";
 import { BENCH_VER, dimBreakdown, publishHost, type BenchRun } from "./bench-store";
 import { UNITS, modelIq } from "./questions";
+import type { PelicanPiece } from "./pelican-wall";
 
 function asRun(payload: unknown): BenchRun | null {
   const obj = typeof payload === "string" ? safeParse(payload) : payload;
@@ -486,6 +487,39 @@ export const publicBoardPack = createServerFn({ method: "GET" }).handler(async (
     return { models, channels, pairs, dims, users };
   } catch {
     return empty;
+  }
+});
+
+export const publicPelicanWall = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const sql = await getSql();
+    const rows = await sql.query<{ payload: unknown }>(
+      `select payload from bench_runs order by created_at desc limit 50`,
+    );
+    const out: PelicanPiece[] = [];
+    for (const row of rows) {
+      const run = asRun(row.payload);
+      if (!run) continue;
+      for (const m of run.models) {
+        const it = m.items?.Q16;
+        if (!it || (!it.html && !it.svg)) continue;
+        out.push({
+          id: `${run.id}:${m.id}`,
+          model: m.id,
+          host: run.host,
+          at: run.createdAt,
+          score: it.score,
+          ok: Boolean(it.ok),
+          html: (it.html || "").slice(0, 80000) || undefined,
+          svg: (it.svg || "").slice(0, 80000) || undefined,
+          detail: (it.detail || "").slice(0, 200),
+          craft: it.craft,
+        });
+      }
+    }
+    return out.slice(0, 60);
+  } catch {
+    return [] as PelicanPiece[];
   }
 });
 

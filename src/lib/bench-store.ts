@@ -1,5 +1,5 @@
 import { QUESTIONS, MAX_SCORE, UNITS, modelIq } from "./questions";
-import type { ProbeResult } from "./probes";
+import type { ProbeProgress, ProbeResult } from "./probes";
 import type { SvgCraft } from "./svg-craft";
 
 export const BENCH_VER = 7;
@@ -29,6 +29,8 @@ export type ModelSnap = {
   items: Record<string, ItemSnap>;
   /** 渠道鉴定（不计分），bench v7 起可选携带 */
   probe?: ProbeResult;
+  /** 鉴定做到一半，续测从这里接着问 */
+  probeProgress?: ProbeProgress;
   /** 全网降智对照（不计分），跑分当时的快照 */
   baseline?: Baseline;
 };
@@ -190,6 +192,7 @@ export function compactResults(
         }
       >;
       probe?: ProbeResult;
+      probeProgress?: ProbeProgress;
       baseline?: Baseline;
     }
   >,
@@ -201,6 +204,7 @@ export function compactResults(
     seconds: r.seconds,
     iq: modelIq(r.items).iq,
     probe: r.probe,
+    probeProgress: r.probeProgress,
     baseline: r.baseline,
     items: Object.fromEntries(
       Object.entries(r.items).map(([qid, it]) => [

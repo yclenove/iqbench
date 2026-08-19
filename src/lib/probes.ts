@@ -163,6 +163,12 @@ export type ProbeResult = {
   rows: ProbeRow[];
 };
 
+export type ProbeProgress = {
+  rows: ProbeRow[];
+  juice?: ProbeJuice;
+  identity?: string;
+};
+
 export function judgeKnowledge(p: KnowledgeProbe, content: string): ProbeRow {
   const focus = extractFinal(content);
   const ok = Boolean(content.trim()) && p.accept.some((re) => new RegExp(re, "i").test(focus));

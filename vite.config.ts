@@ -144,7 +144,11 @@ function linuxdoCreds(mode: string) {
       /* ignore */
     }
   }
-  return { id, secret };
+  return {
+    id,
+    secret,
+    admins: env.IQBENCH_ADMINS || process.env.IQBENCH_ADMINS || "",
+  };
 }
 
 export default defineConfig(({ command, mode }) => {
@@ -158,6 +162,7 @@ export default defineConfig(({ command, mode }) => {
   define: {
     "process.env.LINUX_DO_CLIENT_ID": JSON.stringify(linux.id),
     "process.env.LINUX_DO_CLIENT_SECRET": JSON.stringify(linux.secret),
+    "process.env.IQBENCH_ADMINS": JSON.stringify(linux.admins),
   },
   resolve: { tsconfigPaths: true },
   plugins: [

@@ -49,6 +49,8 @@ export const QUESTIONS = {
     "你是严谨的推理者。禁止使用外部工具、搜索或执行代码。必须自己逐步推理。\n全文最后单独一行写：最终答案: <尽量短的结论，不要在这一行解释>",
   compactSystem:
     "你是严谨的推理者。禁止工具。本通道有超时。必须先输出一行：最终答案: <短结论>\n然后再写不超过 8 行依据。不要先长篇再给答案。",
+  drawCompact:
+    "只输出完整 HTML 文档。从 <!DOCTYPE html> 起，到 </html> 止。不要思考过程，不要解释，不要 markdown。SVG 必须写完并闭合。",
   dimensions: [
     { id: "crt", name: "认知反射", weight: 1.0, why: "压住第一反应，题噪音大所以压权。" },
     { id: "science", name: "多步科学演绎", weight: 2.0, why: "现象串成链。" },

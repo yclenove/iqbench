@@ -96,7 +96,11 @@ function namedScore(
     return { ok, detail: ok ? "判定：不叫醒/不喂药" : "未压住「该喂药」的直觉" };
   }
   if (name === "wash") {
-    const ok = /(开着?车|驾车|驾驶|自驾|把车开|开过去)/.test(focus);
+    const blob = focus || full.slice(-400);
+    const walk = /(步行|走路|走去|走着去|打车|出租车|公交|地铁|骑车|骑单车|骑自行车)/.test(blob);
+    const drive =
+      /(开着?车|开着?.{0,24}(?:轿车|车去)|驾车|驾驶|自驾|把车开|开过去|开自己(?:的|那辆)?车)/.test(blob);
+    const ok = drive && !walk;
     return { ok, detail: ok ? "判定：开车去" : "未点明开车把车送去洗" };
   }
   if (name === "colorblind") {
@@ -160,11 +164,17 @@ function namedScore(
     return { ok, detail: ok ? `中间是${mid}` : `未定位${mid}` };
   }
   if (name === "candy_var") {
-    if (containsNumber(focus, 17)) return { ok: true, detail: "按新表算出 17" };
-    if (containsNumber(focus, 25)) {
+    const blob = focus || full.slice(-400);
+    const hit17 =
+      containsNumber(blob, 17) ||
+      /十七/.test(blob) ||
+      /(?:7\s*[+＋加]\s*10|10\s*[+＋加]\s*7)/.test(blob) ||
+      /(?:7\s*圆.{0,16}10\s*星|10\s*星.{0,16}7\s*圆)/.test(blob);
+    if (hit17 && !negated(blob, "17")) return { ok: true, detail: "按新表算出 17" };
+    if (containsNumber(blob, 25)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "25 是盲取答案，半分" };
     }
-    if (containsNumber(focus, 21)) {
+    if (containsNumber(blob, 21)) {
       return { ok: false, tags: ["疑似套用经典答案"], detail: "答成 21，疑似套用经典题" };
     }
     return { ok: false, detail: "未命中 17" };
@@ -254,6 +264,31 @@ export function gallerySrcDoc(html?: string, svg?: string) {
   }
   if (html && /<svg/i.test(html)) return html.replace(/<\/head>/i, `<style>${css}</style></head>`);
   return "";
+}
+
+/** 正文被 length / 断流截断：有开标签没闭合。思考太长时各题都会中招。 */
+export function looksTruncated(text: string, finishReason?: string) {
+  if (finishReason === "length" || finishReason === "max_tokens" || finishReason === "error") return true;
+  const s = (text || "").trim();
+  if (!s) return false;
+  if (/<svg\b/i.test(s) && !/<\/svg>/i.test(s)) return true;
+  if (/<!doctype html|<html[\s>]/i.test(s) && !/<\/html>/i.test(s)) return true;
+  if (/<(?:path|g|polygon|polyline|style|script|div|body)\b[^>]*$/i.test(s)) return true;
+  if (/<[^>]*$/.test(s)) return true;
+  const opens = (s.match(/\{/g) || []).length;
+  const closes = (s.match(/\}/g) || []).length;
+  if (opens > closes && /\{/.test(s.slice(-400))) return true;
+  return false;
+}
+
+/** 思考被掐断时不要把半截思维链当答案。 */
+export function pickVisibleAnswer(content: string, reasoning: string, finish?: string) {
+  const body = (content || "").trim();
+  const thought = (reasoning || "").trim();
+  const cut = looksTruncated(body || thought, finish);
+  if (body) return { text: body, cut: looksTruncated(body, finish) };
+  if (cut) return { text: "", cut: true };
+  return { text: thought, cut: false };
 }
 
 export function speedFactor(seconds: number, budget: number) {
@@ -354,7 +389,8 @@ function wheelRotateScore(svg: string) {
   if (rotates.length >= 2) return { pts: 2, note: "父组/文档内双 rotate" };
   if (rotates.length === 1) return { pts: 1, note: "文档内一处 rotate" };
   if (/@keyframes[\s\S]{0,400}rotate|animation\s*:[^;]{0,80}(spin|rotate)/i.test(svg)) {
-    return { pts: 1, note: "仅 CSS 旋转" };
+    const both = /#wheel-front\b/.test(svg) && /#wheel-rear\b/.test(svg);
+    return { pts: both ? 2 : 1, note: both ? "CSS 双轮旋转" : "仅 CSS 旋转" };
   }
   return { pts: 0, note: "车轮未旋转" };
 }
@@ -494,6 +530,24 @@ function mountProbe(svgMarkup: string): SvgProbe | null {
     el.tagName.toLowerCase() === "animatetransform" &&
     (el.getAttribute("type") || "").toLowerCase() === "rotate";
   const isAnim = (el: Element) => /^animate(transform|motion)?$/i.test(el.tagName);
+  const cssText = [...root.querySelectorAll("style")].map((s) => s.textContent || "").join("\n");
+  const cssRotateFor = (id: string, el: Element | null) => {
+    if (el) {
+      try {
+        const cs = getComputedStyle(el);
+        const blob = `${cs.animationName} ${cs.transform} ${el.getAttribute("style") || ""}`;
+        if (cs.animationName && cs.animationName !== "none" && /rotat|spin|turn|wheel/i.test(blob)) return true;
+        if (/rotate\s*\(/i.test(blob)) return true;
+      } catch {
+        /* */
+      }
+    }
+    if (!cssText) return false;
+    const cls = (el?.getAttribute("class") || "").split(/\s+/).filter(Boolean);
+    const keys = [id, ...cls];
+    return keys.some((k) => new RegExp(`(#${k}|\\.${k})\\b[^{]*\\{[^}]*(animation|transform)[^}]*`, "i").test(cssText)) &&
+      /rotate|spin/i.test(cssText);
+  };
   return {
     has: (id) => Boolean(q(id)),
     box: (id) => toBox(q(id)),
@@ -518,10 +572,11 @@ function mountProbe(svgMarkup: string): SvgProbe | null {
       if (!el) return false;
       if (rotateTargets.has(id)) return true;
       if ([...el.querySelectorAll("animateTransform")].some(isRotate)) return true;
-      // 旋转挂在包住这个轮子（且不包住另一个轮子）的父组上也算
+      if (cssRotateFor(id, el)) return true;
       const other = id === "wheel-front" ? "wheel-rear" : "wheel-front";
       for (let p = el.parentElement; p && p !== (root as unknown as Element); p = p.parentElement) {
         if ([...p.children].some(isRotate) && !p.querySelector(`[id="${other}"]`)) return true;
+        if (cssRotateFor(p.id || "", p) && !p.querySelector(`[id="${other}"]`)) return true;
       }
       return false;
     },
@@ -530,10 +585,10 @@ function mountProbe(svgMarkup: string): SvgProbe | null {
         const el = q(id);
         if (!el) continue;
         if (animTargets.has(id) || allAnims(el).length) return true;
-        // 曲柄组：包住脚/脚踏但不包住车轮的父组带动画也算
+        if (cssRotateFor(id, el)) return true;
         for (let p = el.parentElement; p && p !== (root as unknown as Element); p = p.parentElement) {
           if (
-            [...p.children].some(isAnim) &&
+            ([...p.children].some(isAnim) || cssRotateFor(p.id || "", p)) &&
             !p.querySelector('[id="wheel-front"],[id="wheel-rear"]')
           ) {
             return true;
@@ -590,7 +645,7 @@ function scorePelican(text: string): PelicanScore {
     ? PELICAN_IDS.filter((id) => probe.has(id))
     : PELICAN_IDS.filter((id) => findById(raw, id));
   b += Math.floor((found.length / PELICAN_IDS.length) * 2);
-  notesB.push(`id ${found.length}/9`);
+  notesB.push(`id ${found.length}/${PELICAN_IDS.length}`);
   if (/viewBox\s*=\s*["']\s*0\s+0\s+400\s+300/.test(raw)) {
     b += 1;
     notesB.push("viewBox 400×300");

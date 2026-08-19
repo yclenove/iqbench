@@ -32,6 +32,7 @@ export const Route = createFileRoute("/api/bench/chat")({
           apiKey?: string;
           model?: string;
           messages?: Array<{ role: string; content: string }>;
+          maxTokens?: number;
         };
         const base = (body.baseUrl || "").replace(/\/+$/, "");
         const apiKey = body.apiKey || "";
@@ -41,6 +42,7 @@ export const Route = createFileRoute("/api/bench/chat")({
           return Response.json({ error: "缺少参数" }, { status: 400 });
         }
 
+        const cap = Math.min(262144, Math.max(4096, Number(body.maxTokens) || 131072));
         const upstream = await fetch(`${base}/chat/completions`, {
           method: "POST",
           headers: {
@@ -53,8 +55,8 @@ export const Route = createFileRoute("/api/bench/chat")({
             model,
             messages,
             temperature: 0,
-            max_tokens: 32768,
-            max_completion_tokens: 32768,
+            max_tokens: cap,
+            max_completion_tokens: cap,
             stream: true,
             reasoning_effort: "xhigh",
             reasoning: { effort: "xhigh" },

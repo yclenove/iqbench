@@ -6,6 +6,9 @@ export type StreamChatInput = {
   signal?: AbortSignal;
   /** 单次请求超时，不含重试间隔。默认 90s。 */
   timeoutMs?: number;
+  /** 最多尝试次数（含第一次）。默认 4；502/504 仍最多 2。 */
+  retries?: number;
+  maxTokens?: number;
   onDelta?: (full: { content: string; reasoning: string }) => void;
   onRetry?: (attempt: number, max: number, reason: string) => void;
 };
@@ -18,6 +21,7 @@ function takeDelta(obj: Record<string, unknown>) {
   return {
     content: delta.content || message.content || "",
     reasoning: delta.reasoning_content || message.reasoning_content || "",
+    finish: String(ch0.finish_reason || obj.finish_reason || ""),
   };
 }
 
@@ -80,6 +84,7 @@ async function streamChatOnce(input: StreamChatInput) {
       apiKey: input.apiKey,
       model: input.model,
       messages: input.messages,
+      maxTokens: input.maxTokens,
     }),
     signal,
   });
@@ -95,7 +100,7 @@ async function streamChatOnce(input: StreamChatInput) {
     if (body.error) throw new Error(String(body.error));
     const d = takeDelta(body);
     input.onDelta?.({ content: d.content, reasoning: d.reasoning });
-    return { content: d.content, reasoning: d.reasoning };
+    return { content: d.content, reasoning: d.reasoning, finish: d.finish };
   }
 
   if (!res.body) throw new Error("没有响应流");
@@ -105,6 +110,7 @@ async function streamChatOnce(input: StreamChatInput) {
   let buf = "";
   let content = "";
   let reasoning = "";
+  let finish = "";
 
   try {
     while (true) {
@@ -123,6 +129,7 @@ async function streamChatOnce(input: StreamChatInput) {
           const d = takeDelta(obj);
           if (d.content) content += d.content;
           if (d.reasoning) reasoning += d.reasoning;
+          if (d.finish) finish = d.finish;
           input.onDelta?.({ content, reasoning });
         } catch {
           /* keep-alive */
@@ -131,16 +138,16 @@ async function streamChatOnce(input: StreamChatInput) {
     }
   } catch (e) {
     if (content || reasoning) {
-      return { content, reasoning };
+      return { content, reasoning, finish: finish || "error" };
     }
     throw e;
   }
 
-  return { content, reasoning };
+  return { content, reasoning, finish };
 }
 
 export async function streamChat(input: StreamChatInput) {
-  const max = 4;
+  const max = Math.max(1, input.retries ?? 4);
   let lastErr: unknown = new Error("未知错误");
   for (let attempt = 1; attempt <= max; attempt++) {
     if (input.signal?.aborted) {

@@ -1,8 +1,7 @@
-/** Comma-separated emails / user ids / linux.do usernames. Empty env still includes built-in owners. */
-const BUILTIN_ADMINS = ["yclenove"];
-
+/** 管理员名单只来自环境变量 IQBENCH_ADMINS（逗号分隔：用户名 / 邮箱 / user id）。仓库不写死任何人。 */
 export function adminList() {
-  return [...BUILTIN_ADMINS, ...(process.env.IQBENCH_ADMINS || "").split(",")]
+  return (process.env.IQBENCH_ADMINS || "")
+    .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 }

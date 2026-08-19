@@ -115,6 +115,17 @@
     border-radius: 0.5rem;
     background: #d9eefc;
   }
+  .salon-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    background: #d9eefc;
+  }
+  .salon-frame-hero {
+    min-height: 220px;
+    aspect-ratio: 16 / 10;
+  }
   .is-narrow .btn-grid {
     display: grid !important;
     grid-template-columns: 1fr !important;

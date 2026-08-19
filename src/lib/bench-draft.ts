@@ -31,6 +31,7 @@ export function emptyFailTag(preview: string) {
   if (http) return `HTTP ${http[1]}`;
   if (/Failed to fetch|fetch failed|NetworkError|ECONN|ETIMEDOUT|饱和|upstream/i.test(p)) return "网络失败";
   if (/超时|timeout/i.test(p)) return "超时";
+  if (/截断|思考未完成/.test(p)) return "截断";
   if (!p.trim()) return "空答";
   return "无产出";
 }
@@ -43,7 +44,7 @@ export function isRetryableFail(it: {
 }) {
   if (it.ok) return false;
   const blob = `${it.detail || ""} ${it.preview || ""} ${(it.tags || []).join(" ")}`;
-  return /超预算无产出|无产出|空答|已停止|HTTP 408|HTTP 429|HTTP 5\d\d|Failed to fetch|fetch failed|超时|网络失败|网络|饱和|upstream|rate limit|Abort|网关|ECONN|ETIMEDOUT/i.test(
+  return /超预算无产出|无产出|空答|已停止|截断|思考未完成|HTTP 408|HTTP 429|HTTP 5\d\d|Failed to fetch|fetch failed|超时|网络失败|网络|饱和|upstream|rate limit|Abort|网关|ECONN|ETIMEDOUT/i.test(
     blob,
   );
 }

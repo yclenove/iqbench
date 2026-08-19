@@ -20,22 +20,15 @@ function AuthSlot() {
   );
 }
 
-export function AppHeader({ page }: { page: "home" | "board" | "status" }) {
+export function AppHeader({ page }: { page: "home" | "board" | "status" | "gallery" }) {
   const live = useLiveBench();
-  const item = (tab: "home" | "board" | "status", label: string, on: boolean) =>
-    tab === "status" ? (
+  const item = (tab: "home" | "board" | "status" | "gallery", label: string, on: boolean) => {
+    const to = tab === "status" ? "/status" : tab === "gallery" ? "/gallery" : "/";
+    const search = tab === "board" ? { tab: "board" as const } : tab === "home" ? { tab: undefined } : undefined;
+    return (
       <Link
-        to="/status"
-        className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
-          on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
-        }`}
-      >
-        {label}
-      </Link>
-    ) : (
-      <Link
-        to="/"
-        search={tab === "board" ? { tab: "board" } : { tab: undefined }}
+        to={to}
+        search={search}
         className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
           on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
         }`}
@@ -43,6 +36,7 @@ export function AppHeader({ page }: { page: "home" | "board" | "status" }) {
         {label}
       </Link>
     );
+  };
 
   return (
     <header className="border-b border-border/70">
@@ -60,6 +54,7 @@ export function AppHeader({ page }: { page: "home" | "board" | "status" }) {
           <nav className="ml-4 hidden items-end gap-4 sm:flex">
             {item("home", "测评", page === "home")}
             {item("board", "榜单", page === "board")}
+            {item("gallery", "画廊", page === "gallery")}
             {item("status", "状态", page === "status")}
           </nav>
         </div>
@@ -67,6 +62,7 @@ export function AppHeader({ page }: { page: "home" | "board" | "status" }) {
           <nav className="flex items-end gap-4 sm:hidden">
             {item("home", "测评", page === "home")}
             {item("board", "榜单", page === "board")}
+            {item("gallery", "画廊", page === "gallery")}
             {item("status", "状态", page === "status")}
           </nav>
           <AuthSlot />
