@@ -559,6 +559,11 @@ function Home() {
             detail: junk ? shortFail(preview || judged.detail) : judged.detail,
             preview: junk ? shortFail(preview) : preview,
           });
+          if (q.id === "Q16") {
+            const blank = { ok: false, score: 0, accuracy: 0, speedFactor: 0, detail: judged.detail, tags: judged.tags };
+            write("Q16a", blank);
+            write("Q16b", blank);
+          }
         }
         const scored = Object.entries(bucket.items).filter(([id]) => id !== "Q16");
         bucket.total = scored.reduce((s, [, it]) => s + it.score, 0);
@@ -781,7 +786,7 @@ function Home() {
             <p className="kicker">Leaderboard</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight">榜单</h1>
             <p className="mt-1 text-sm text-muted">
-              模型看中位，渠道看相对增益，测评员看登录用户贡献。游客只留本机；L站 / Google / X 登录后才进公开榜。
+              模型看中位，渠道看相对增益，蹬er看登录用户贡献。游客只留本机；L站 / Google / X 登录后才进公开榜。
             </p>
           </div>
           <BenchArchive

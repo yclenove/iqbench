@@ -17,7 +17,7 @@ await build({
     contents: `
       export * from "./src/lib/probes";
       export { containsNumber, judgeItem } from "./src/lib/judge";
-      export { QUESTIONS } from "./src/lib/questions";
+      export { QUESTIONS, UNITS, modelIq, iqIndex } from "./src/lib/questions";
       export { genKnights, genLineup, genSocks, socksAnswer } from "./src/lib/generators";
       export { baselineVerdict, baselineLine } from "./src/lib/bench-store";
       export { mulberry32 } from "./src/lib/rng";
@@ -181,4 +181,20 @@ test("安眠药：不应立即给药也算压住直觉", () => {
     assert.ok(judgeItem(q, t, 20).ok, t);
   }
   assert.ok(!judgeItem(q, "最终答案: 叫醒并喂药", 20).ok);
+});
+
+test("IQ：缺题按未过计入，不能靠少答题冲 145", () => {
+  assert.equal(iqIndex(1), 145);
+  assert.equal(iqIndex(0.5), 100);
+  const allOk = Object.fromEntries(UNITS.map((u) => [u.id, { ok: true, accuracy: u.score }]));
+  assert.equal(modelIq(allOk).iq, 145);
+  const skipDraw = { ...allOk };
+  delete skipDraw.Q16a;
+  delete skipDraw.Q16b;
+  assert.ok(modelIq(skipDraw).iq < 145, `缺鹈鹕仍 145：${modelIq(skipDraw).iq}`);
+  assert.equal(modelIq({}).iq, 55);
+  const failOne = { ...allOk, Q1: { ok: false, accuracy: 0 } };
+  assert.ok(modelIq(failOne).iq < 145);
+  const half = Object.fromEntries(UNITS.map((u) => [u.id, { ok: false, accuracy: u.score / 2 }]));
+  assert.equal(modelIq(half).iq, 100);
 });

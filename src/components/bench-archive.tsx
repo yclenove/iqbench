@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { History, Trophy, Trash2 } from "lucide-react";
+import { History, Trophy, Trash2, Wrench } from "lucide-react";
 import { runGaps } from "@/lib/bench-draft";
 import {
   displayHost,
@@ -11,12 +11,14 @@ import {
   deleteRun,
   loadRuns,
   modelBoard,
+  recomputeLocalIqs,
   runLabel,
 } from "@/lib/bench-store";
 import {
   clearMyCloudRuns,
   deleteCloudRun,
   publicBoardPack,
+  repairPublicIq,
   whoamiAdmin,
   wipePublicBoards,
   type PublicChannelRow,
@@ -58,6 +60,8 @@ export function BenchArchive({
   const [dims, setDims] = useState<PublicDimRow[]>([]);
   const [users, setUsers] = useState<PublicUserRow[]>([]);
   const [admin, setAdmin] = useState(false);
+  const [repairMsg, setRepairMsg] = useState("");
+  const [repairing, setRepairing] = useState(false);
   const [tab, setTab] = useState<Tab>("public-model");
   const [focusModel, setFocusModel] = useState("");
 
@@ -113,6 +117,30 @@ export function BenchArchive({
       .catch(() => reload());
   };
 
+  const handleRepairIq = () => {
+    setRepairing(true);
+    setRepairMsg("正在按新公式重算…");
+    recomputeLocalIqs();
+    const done = signedIn && admin
+      ? repairPublicIq()
+      : Promise.resolve({ updated: 0, unchanged: 0, skipped: 0, leftover: [] as { model: string; iq: number; score: number; max: number }[] });
+    done
+      .then((s) => {
+        const left = (s.leftover || []).map((x) => `${x.model} ${x.iq}（${x.score}/${x.max}）`).join("、");
+        setRepairMsg(
+          admin
+            ? `公开榜已改 ${s.updated} 条，未变 ${s.unchanged}，跳过 ${s.skipped}。${left ? `仍≥145：${left}` : "没有 145 残留。"}`
+            : "本机历史已按新公式重算。登录管理员账号才能修公开榜。",
+        );
+        reload();
+      })
+      .catch((err) => {
+        setRepairMsg(err instanceof Error ? err.message : "修复失败");
+        reload();
+      })
+      .finally(() => setRepairing(false));
+  };
+
   const openPair = (model: string) => {
     setFocusModel(model);
     setTab("public-pair");
@@ -126,7 +154,7 @@ export function BenchArchive({
           ["public-channel", "渠道"],
           ["public-pair", "同模跨渠"],
           ["public-dim", "维度"],
-          ["public-user", "测评员"],
+          ["public-user", "蹬er"],
           ["local", "本机"],
         ] as const
       ).map(([id, label]) => (
@@ -145,6 +173,7 @@ export function BenchArchive({
   );
 
   const tools = (
+    <>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <p className="min-w-0 flex-1 text-sm text-muted">
         {signedIn
@@ -159,15 +188,38 @@ export function BenchArchive({
         清空本机历史
       </button>
       {admin ? (
+        <>
+          <button
+            type="button"
+            disabled={repairing}
+            onClick={handleRepairIq}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/50 bg-primary/10 px-3 text-xs text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+          >
+            <Wrench className="size-3.5" />
+            {repairing ? "重算中…" : "修复旧榜 IQ"}
+          </button>
+          <button
+            type="button"
+            onClick={handleWipePublic}
+            className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-xs text-muted transition-colors hover:text-fg"
+          >
+            清空公开榜
+          </button>
+        </>
+      ) : (
         <button
           type="button"
-          onClick={handleWipePublic}
-          className="inline-flex h-9 items-center rounded-lg border border-border px-3 text-xs text-muted transition-colors hover:text-fg"
+          disabled={repairing}
+          onClick={handleRepairIq}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted transition-colors hover:text-fg disabled:opacity-50"
         >
-          清空公开榜
+          <Wrench className="size-3.5" />
+          重算本机 IQ
         </button>
-      ) : null}
+      )}
     </div>
+    {repairMsg ? <p className="mb-4 text-sm text-primary">{repairMsg}</p> : null}
+    </>
   );
 
   const history = (
@@ -296,6 +348,7 @@ function ModelTable({ title, rows }: { title: string; rows: BoardRow[] }) {
                 <th className={headCell}>#</th>
                 <th className={headCell}>模型</th>
                 <th className={headCell}>最佳 IQ</th>
+                <th className={headCell}>最近</th>
                 <th className={headCell}>卷面</th>
                 <th className={headCell}>知识</th>
                 <th className={headCell}>次数</th>
@@ -308,6 +361,9 @@ function ModelTable({ title, rows }: { title: string; rows: BoardRow[] }) {
                   <td className={`${cell} font-medium`}>{r.model}</td>
                   <td className={`${cell} tabular-nums`}>
                     <span className="font-serif text-base font-bold text-primary">{r.iq}</span>
+                  </td>
+                  <td className={`${cell} tabular-nums ${r.lastIq + 8 < r.iq ? "text-bad" : "text-muted"}`}>
+                    {r.lastIq}
                   </td>
                   <td className={`${cell} tabular-nums`}>
                     {r.best}/{r.max}

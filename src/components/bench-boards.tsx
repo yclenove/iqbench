@@ -110,10 +110,11 @@ export function PublicModelTable({
   pairs: PublicPairRow[];
   onOpenModel?: (model: string) => void;
 }) {
-  const [sort, setSort] = useState<"med" | "best" | "n">("med");
+  const [sort, setSort] = useState<"med" | "last" | "best" | "n">("med");
   const ordered = useMemo(() => {
     const copy = [...rows];
     if (sort === "best") copy.sort((a, b) => b.best_iq - a.best_iq || b.med_iq - a.med_iq);
+    else if (sort === "last") copy.sort((a, b) => b.last_iq - a.last_iq || b.med_iq - a.med_iq);
     else if (sort === "n") copy.sort((a, b) => b.runs - a.runs || b.med_iq - a.med_iq);
     else copy.sort((a, b) => b.med_iq - a.med_iq || b.best_iq - a.best_iq);
     return copy;
@@ -122,7 +123,7 @@ export function PublicModelTable({
   return (
     <CardShell
       title="模型总榜"
-      hint="主排序用中位 IQ，避免一次好运冲顶。每行带出该模型分数最高的三个渠道。"
+      hint="主排序用中位 IQ。最近是该模型最后一场的分数，方便看有没有掉。"
       empty="公开榜还是空的"
     >
       {rows.length === 0 ? null : (
@@ -131,6 +132,7 @@ export function PublicModelTable({
             {(
               [
                 ["med", "中位"],
+                ["last", "最近"],
                 ["best", "巅峰"],
                 ["n", "样本"],
               ] as const
@@ -154,6 +156,7 @@ export function PublicModelTable({
                   <th className={headCell}>#</th>
                   <th className={headCell}>模型</th>
                   <th className={headCell}>中位</th>
+                  <th className={headCell}>最近</th>
                   <th className={headCell}>分布</th>
                   <th className={headCell}>巅峰</th>
                   <th className={headCell}>前三渠道</th>
@@ -176,6 +179,12 @@ export function PublicModelTable({
                       </td>
                       <td className={`${cell} tabular-nums`}>
                         <span className="font-serif text-lg font-bold text-primary">{r.med_iq}</span>
+                      </td>
+                      <td
+                        className={`${cell} tabular-nums ${r.last_iq + 8 < r.med_iq ? "text-bad" : r.last_iq > r.med_iq + 4 ? "text-ok" : "text-muted"}`}
+                        title="该模型最近一场 IQ"
+                      >
+                        {r.last_iq}
                       </td>
                       <td className={cell}>
                         <IqRange p25={r.p25_iq} med={r.med_iq} best={r.best_iq} />
@@ -366,7 +375,7 @@ export function PublicPairBoard({
 export function PublicUserTable({ rows }: { rows: PublicUserRow[] }) {
   return (
     <CardShell
-      title="测评员榜"
+      title="蹬er榜"
       hint="按登录用户聚合中位 IQ。只显示公开昵称，不上报邮箱和 Key。游客不上此榜。"
       empty="还没有登录用户上榜"
     >
@@ -376,7 +385,7 @@ export function PublicUserTable({ rows }: { rows: PublicUserRow[] }) {
             <thead>
               <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
                 <th className={headCell}>#</th>
-                <th className={headCell}>测评员</th>
+                <th className={headCell}>蹬er</th>
                 <th className={headCell}>中位</th>
                 <th className={headCell}>巅峰</th>
                 <th className={headCell}>代表模型</th>

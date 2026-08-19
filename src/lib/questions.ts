@@ -390,50 +390,62 @@ export function sessionSeed() {
   return seedFrom();
 }
 
+export function unitCredit(
+  it: { ok?: boolean; accuracy?: number; incomplete?: boolean } | undefined,
+  max: number,
+) {
+  if (!it || it.incomplete) return 0;
+  if (typeof it.accuracy === "number" && max > 0) {
+    return Math.max(0, Math.min(1, it.accuracy / max));
+  }
+  return it.ok ? 1 : 0;
+}
+
 export function modelIq(
-  items: Record<string, { ok?: boolean; accuracy?: number; incomplete?: boolean }>,
+  items: Record<string, { ok?: boolean; accuracy?: number; score?: number; incomplete?: boolean }>,
 ) {
   let earned = 0;
   let possible = 0;
+  let paperE = 0;
+  let paperP = 0;
   let equalPass = 0;
   let equalTotal = 0;
   for (const dim of QUESTIONS.dimensions) {
     const us = UNITS.filter((u) => u.dim === dim.id);
-    let dimE = 0;
-    let dimP = 0;
     for (const u of us) {
       const it = items[u.id];
-      if (!it || it.incomplete) continue;
-      dimP += 1;
-      possible += dim.weight / us.length;
-      if (it.ok) {
-        dimE += 1;
-        earned += dim.weight / us.length;
-      }
-    }
-    if (dimP) {
-      equalPass += dimE;
-      equalTotal += dimP;
+      const w = dim.weight / us.length;
+      const acc = unitCredit(it, u.score);
+      possible += w;
+      earned += w * acc;
+      paperP += u.score;
+      paperE += typeof it?.score === "number" ? Math.max(0, it.score) : acc * u.score;
+      equalTotal += 1;
+      if (acc >= 1) equalPass += 1;
     }
   }
   const weightedRatio = possible ? earned / possible : 0;
+  const paperRatio = paperP ? paperE / paperP : 0;
+  const ratio = Math.min(weightedRatio, paperRatio);
   return {
-    iq: iqIndex(weightedRatio),
+    iq: iqIndex(ratio),
     weightedRatio,
+    paperRatio,
     equalRate: equalTotal ? equalPass / equalTotal : 0,
   };
 }
 
 export function bootstrapIq(
-  items: Record<string, { ok?: boolean; incomplete?: boolean }>,
+  items: Record<string, { ok?: boolean; accuracy?: number; incomplete?: boolean }>,
   rounds = 800,
 ) {
   const units = UNITS.map((u) => {
-    const it = items[u.id];
-    if (!it || it.incomplete) return null;
     const siblings = UNITS.filter((x) => x.dim === u.dim).length;
-    return { ok: Boolean(it.ok), w: QUESTIONS.dimensions.find((d) => d.id === u.dim)!.weight / siblings };
-  }).filter((x): x is { ok: boolean; w: number } => Boolean(x));
+    return {
+      acc: unitCredit(items[u.id], u.score),
+      w: QUESTIONS.dimensions.find((d) => d.id === u.dim)!.weight / siblings,
+    };
+  });
   if (units.length < 2) return { lo: 55, hi: 145 };
   const iqs: number[] = [];
   for (let r = 0; r < rounds; r++) {
@@ -442,7 +454,7 @@ export function bootstrapIq(
     for (let i = 0; i < units.length; i++) {
       const u = units[Math.floor(Math.random() * units.length)]!;
       p += u.w;
-      if (u.ok) e += u.w;
+      e += u.w * u.acc;
     }
     iqs.push(iqIndex(p ? e / p : 0));
   }

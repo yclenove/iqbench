@@ -20,19 +20,29 @@ function AuthSlot() {
   );
 }
 
-export function AppHeader({ page }: { page: "home" | "board" }) {
+export function AppHeader({ page }: { page: "home" | "board" | "status" }) {
   const live = useLiveBench();
-  const item = (tab: "home" | "board", label: string, on: boolean) => (
-    <Link
-      to="/"
-      search={tab === "board" ? { tab: "board" } : { tab: undefined }}
-      className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
-        on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
-      }`}
-    >
-      {label}
-    </Link>
-  );
+  const item = (tab: "home" | "board" | "status", label: string, on: boolean) =>
+    tab === "status" ? (
+      <Link
+        to="/status"
+        className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
+          on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
+        }`}
+      >
+        {label}
+      </Link>
+    ) : (
+      <Link
+        to="/"
+        search={tab === "board" ? { tab: "board" } : { tab: undefined }}
+        className={`border-b-2 px-1 pb-1.5 pt-1 text-sm transition-colors ${
+          on ? "border-primary font-medium text-fg" : "border-transparent text-muted hover:text-fg"
+        }`}
+      >
+        {label}
+      </Link>
+    );
 
   return (
     <header className="border-b border-border/70">
@@ -50,12 +60,14 @@ export function AppHeader({ page }: { page: "home" | "board" }) {
           <nav className="ml-4 hidden items-end gap-4 sm:flex">
             {item("home", "测评", page === "home")}
             {item("board", "榜单", page === "board")}
+            {item("status", "状态", page === "status")}
           </nav>
         </div>
         <div className="flex items-center gap-3">
           <nav className="flex items-end gap-4 sm:hidden">
             {item("home", "测评", page === "home")}
             {item("board", "榜单", page === "board")}
+            {item("status", "状态", page === "status")}
           </nav>
           <AuthSlot />
           <a

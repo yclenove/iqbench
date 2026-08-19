@@ -57,7 +57,7 @@ export function missingJobs(
     const items = results[model]?.items || {};
     for (const q of QUESTIONS.items) {
       if (q.id === "Q16") {
-        if (!items.Q16 && !items.Q16a) jobs.push({ model, qid: "Q16" });
+        if (!items.Q16a || !items.Q16b) jobs.push({ model, qid: "Q16" });
       } else if (!items[q.id]) {
         jobs.push({ model, qid: q.id });
       }

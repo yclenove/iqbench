@@ -377,7 +377,7 @@ export function buildReportHtml(
     <header class="cover">
       <div class="kicker">猛蹬·145 · 我就看智商能低到什么程度</div>
       <h1>猛蹬·145 测评报告</h1>
-      <p class="lede">bench v7。IQ = 100 + 90×(加权通过率−0.5)，上限 145。速度 1.5 倍时限内不扣卷面，3 倍才降到 0.88。差 <20 或区间重叠视为同档。半分不进 IQ。</p>
+      <p class="lede">bench v7。IQ = 100 + 90×(加权正确率−0.5)，上限 145。缺题、半分、画题 7/10 都按比例进 IQ，不能靠少答题冲顶。速度 1.5 倍时限内不扣卷面。差 <20 或区间重叠视为同档。</p>
       <div class="meta-row">
         <div><span>生成时间</span><b>${esc(generatedAt)}</b></div>
         <div><span>接口主机</span><b>${esc(host)}</b></div>

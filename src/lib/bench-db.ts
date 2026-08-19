@@ -3,13 +3,114 @@ import { getSql, type Sql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { isAdminUser } from "@/lib/admin";
 import { BENCH_VER, dimBreakdown, publishHost, type BenchRun } from "./bench-store";
+import { UNITS, modelIq } from "./questions";
 
 function asRun(payload: unknown): BenchRun | null {
   const obj = typeof payload === "string" ? safeParse(payload) : payload;
   if (!obj || typeof obj !== "object") return null;
   const run = obj as BenchRun;
-  if (!run.id || run.benchVer !== BENCH_VER) return null;
+  if (!run.id || !Array.isArray(run.models)) return null;
+  if (run.benchVer != null && run.benchVer !== BENCH_VER) return null;
   return run;
+}
+
+function coerceRun(payload: unknown): {
+  id: string;
+  models: Array<{ id: string; items: Record<string, { ok?: boolean; incomplete?: boolean }>; iq?: number }>;
+} | null {
+  let obj: unknown = payload;
+  if (typeof obj === "string") obj = safeParse(obj);
+  if (typeof obj === "string") obj = safeParse(obj);
+  if (!obj || typeof obj !== "object") return null;
+  const rec = obj as Record<string, unknown>;
+  const id = String(rec.id || "");
+  if (!id || !Array.isArray(rec.models)) return null;
+  const models = rec.models
+    .filter((m): m is Record<string, unknown> => Boolean(m) && typeof m === "object")
+    .map((m) => ({
+      id: String(m.id || ""),
+      items: (m.items && typeof m.items === "object" ? m.items : {}) as Record<
+        string,
+        { ok?: boolean; incomplete?: boolean }
+      >,
+      iq: typeof m.iq === "number" ? m.iq : undefined,
+    }))
+    .filter((m) => m.id);
+  return models.length ? { id, models } : null;
+}
+
+const g = globalThis as typeof globalThis & { __iqRepair__?: Promise<unknown> };
+
+async function recomputeAllPublicIq(sql: Sql) {
+  const runs = await sql.query<{ id: string; payload: unknown }>(`select id, payload from bench_runs`);
+  const scores = await sql.query<{ id: string; model: string; iq: unknown }>(
+    `select id, model, iq from bench_public_scores`,
+  );
+  const iqById = new Map<string, number>();
+  const iqByRunModel = new Map<string, number>();
+  for (const row of runs) {
+    const parsed = coerceRun(row.payload);
+    if (!parsed) continue;
+    const runId = String(row.id || parsed.id);
+    const raw = typeof row.payload === "string" ? safeParse(row.payload) : row.payload;
+    let dirty = false;
+    for (const m of parsed.models) {
+      const iq = modelIq(m.items).iq;
+      if (m.iq !== iq) dirty = true;
+      iqById.set(`${runId}:${m.id}`, iq);
+      iqByRunModel.set(`${runId}\t${m.id}`, iq);
+    }
+    if (dirty && raw && typeof raw === "object") {
+      const rec = raw as BenchRun;
+      rec.models = rec.models.map((m) => ({ ...m, iq: modelIq(m.items || {}).iq }));
+      await sql.query(`update bench_runs set payload = $1::jsonb where id = $2`, [JSON.stringify(rec), runId]);
+    }
+  }
+  let updated = 0;
+  let unchanged = 0;
+  let skipped = 0;
+  for (const s of scores) {
+    const iq = iqById.get(s.id) ?? iqByRunModel.get(`${s.id.split(":")[0]}\t${s.model}`);
+    if (iq == null) {
+      skipped += 1;
+      continue;
+    }
+    if (Number(s.iq) === iq) {
+      unchanged += 1;
+      continue;
+    }
+    await sql.query(`update bench_public_scores set iq = $1 where id = $2`, [iq, s.id]);
+    updated += 1;
+  }
+  const leftover = await sql.query<{ model: string; iq: unknown; score: unknown; max_score: unknown }>(
+    `select model, iq, score, max_score from bench_public_scores where iq >= 145 order by model limit 12`,
+  );
+  return {
+    updated,
+    unchanged,
+    skipped,
+    leftover: leftover.map((r) => ({
+      model: String(r.model),
+      iq: Number(r.iq),
+      score: Number(r.score),
+      max: Number(r.max_score),
+    })),
+  };
+}
+
+async function ensureRepaired(sql: Sql) {
+  if (!g.__iqRepair__) {
+    g.__iqRepair__ = recomputeAllPublicIq(sql)
+      .catch((err) => {
+        console.error("[iq-repair]", err);
+      })
+      .finally(() => {
+        setTimeout(() => {
+          g.__iqRepair__ = undefined;
+        }, 8_000);
+      });
+  }
+  await g.__iqRepair__;
 }
 
 function safeParse(s: string) {
@@ -25,6 +126,8 @@ export const saveCloudRun = createServerFn({ method: "POST" })
   .validator((run: BenchRun) => run)
   .handler(async ({ context, data: run }) => {
     if (run.benchVer !== BENCH_VER) return { ok: false as const };
+    const complete = run.models.every((m) => UNITS.every((u) => m.items[u.id]));
+    if (!complete) return { ok: false as const, reason: "incomplete" as const };
     const sql = await getSql();
     const host = publishHost(run.host, run.hostPublic === true);
     const safe: BenchRun = { ...run, host, keyHint: "已隐藏", hostPublic: run.hostPublic === true };
@@ -35,6 +138,7 @@ export const saveCloudRun = createServerFn({ method: "POST" })
       [run.id, context.userId, host, run.keyFp, run.benchVer, JSON.stringify(safe)],
     );
     for (const m of run.models) {
+      const iq = modelIq(m.items).iq;
       await sql.query(
         `insert into bench_public_scores
           (id, user_id, host, model, iq, score, max_score, seconds,
@@ -46,7 +150,7 @@ export const saveCloudRun = createServerFn({ method: "POST" })
           context.userId,
           host,
           m.id,
-          m.iq ?? 70,
+          iq,
           m.total,
           m.max,
           m.seconds,
@@ -65,6 +169,7 @@ export const listCloudRuns = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await getSql();
+    await ensureRepaired(sql);
     await sql.query(`delete from bench_runs where user_id = $1 and bench_ver < $2`, [
       context.userId,
       BENCH_VER,
@@ -81,6 +186,7 @@ export const listCloudRuns = createServerFn({ method: "GET" })
 export type PublicModelRow = {
   model: string;
   med_iq: number;
+  last_iq: number;
   p25_iq: number;
   best_iq: number;
   best_score: number;
@@ -146,6 +252,7 @@ function mapModel(r: Record<string, unknown>): PublicModelRow {
   return {
     model: String(r.model ?? ""),
     med_iq: Math.round(num(r.med_iq)),
+    last_iq: Math.round(num(r.last_iq ?? r.med_iq)),
     p25_iq: Math.round(num(r.p25_iq)),
     best_iq: Math.round(num(r.best_iq)),
     best_score: Math.round(num(r.best_score)),
@@ -208,6 +315,7 @@ async function queryModels(sql: Sql): Promise<PublicModelRow[]> {
   const rows = await sql.query(
     `select model,
             round(percentile_cont(0.5) within group (order by iq))::int as med_iq,
+            (array_agg(iq order by created_at desc))[1]::int as last_iq,
             round(percentile_cont(0.25) within group (order by iq))::int as p25_iq,
             max(iq)::int as best_iq,
             max(score)::int as best_score,
@@ -367,6 +475,7 @@ export const publicBoardPack = createServerFn({ method: "GET" }).handler(async (
   const empty = { models: [], channels: [], pairs: [], dims: [], users: [] };
   try {
     const sql = await getSql();
+    await ensureRepaired(sql);
     const [models, channels, pairs, dims] = await Promise.all([
       queryModels(sql),
       queryChannels(sql),
@@ -413,11 +522,24 @@ export const wipePublicBoards = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const { getSessionUser } = await import("@/lib/auth/verify.server");
     const u = await getSessionUser();
-    if (!isAdminUser({ id: context.userId, email: u?.email })) {
+    if (!isAdminUser({ id: context.userId, email: u?.email, name: u?.name })) {
       throw new Error("无权清空公开榜");
     }
     const sql = await getSql();
     await sql.query(`truncate table bench_public_scores`);
     await sql.query(`delete from bench_runs`);
     return { ok: true as const };
+  });
+
+export const repairPublicIq = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { getSessionUser } = await import("@/lib/auth/verify.server");
+    const u = await getSessionUser();
+    if (!isAdminUser({ id: context.userId, email: u?.email, name: u?.name })) {
+      throw new Error("无权修复公开榜");
+    }
+    g.__iqRepair__ = undefined;
+    const sql = await getSql();
+    return recomputeAllPublicIq(sql);
   });

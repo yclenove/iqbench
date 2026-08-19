@@ -254,6 +254,19 @@ export function loadRuns(): BenchRun[] {
   }
 }
 
+export function recomputeLocalIqs() {
+  const next = loadRuns().map((r) => ({
+    ...r,
+    models: r.models.map((m) => ({ ...m, iq: modelIq(m.items || {}).iq })),
+  }));
+  try {
+    localStorage.setItem(LS_RUNS, JSON.stringify(next.slice(0, MAX_RUNS)));
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
 export function saveRun(run: BenchRun) {
   if (!run.models.length || run.benchVer !== BENCH_VER) return;
   const prev = loadRuns().filter((r) => r.id !== run.id);
@@ -288,6 +301,7 @@ export type BoardRow = {
   max: number;
   pct: number;
   iq: number;
+  lastIq: number;
   bestSeconds: number;
   runs: number;
   lastAt: string;
@@ -309,6 +323,7 @@ export function modelBoard(runs: BenchRun[]): BoardRow[] {
         max: m.max,
         pct: m.max ? Math.round((100 * m.total) / m.max) : 0,
         iq,
+        lastIq: iq,
         bestSeconds: m.seconds,
         runs: 0,
         lastAt: run.createdAt,
@@ -326,7 +341,10 @@ export function modelBoard(runs: BenchRun[]): BoardRow[] {
         row.bestSeconds = m.seconds;
         row.host = run.host;
       }
-      if (run.createdAt > row.lastAt) row.lastAt = run.createdAt;
+      if (run.createdAt >= row.lastAt) {
+        row.lastAt = run.createdAt;
+        row.lastIq = iq;
+      }
       map.set(m.id, row);
     }
   }
