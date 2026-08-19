@@ -85,6 +85,16 @@ IQ = round(100 + 90 × (加权通过率 − 0.5))
 
 ## 跑起来
 
+不想让 Key 过托管站，本机一键：
+
+```bash
+npx github:yclenove/iqbench
+```
+
+打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)。首次会装依赖。
+
+或者自己 clone：
+
 ```bash
 git clone https://github.com/yclenove/iqbench.git
 cd iqbench

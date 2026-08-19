@@ -50,13 +50,22 @@ export const Route = createRootRoute({
         <footer className="border-t border-border/70">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-muted sm:px-6">
             <span>猛蹬·145</span>
-            <p>
-              友情链接
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <a
+                href="https://github.com/yclenove/iqbench"
+                target="_blank"
+                rel="noreferrer"
+                className="text-fg underline decoration-primary/50 underline-offset-2 transition-colors hover:text-primary"
+              >
+                GitHub
+              </a>
+              <span className="text-faint">·</span>
+              <span>友情链接</span>
               <a
                 href="https://linux.do"
                 target="_blank"
                 rel="noreferrer"
-                className="ml-2 text-fg underline decoration-primary/50 underline-offset-2 transition-colors hover:text-primary"
+                className="text-fg underline decoration-primary/50 underline-offset-2 transition-colors hover:text-primary"
               >
                 LINUX DO
               </a>

@@ -3,6 +3,8 @@ import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { useLiveBench } from "@/lib/live-bench";
 
+const REPO = "https://github.com/yclenove/iqbench";
+
 function AuthSlot() {
   const { user, isPending } = useCurrentUserState();
   if (isPending) return <div className="h-9 w-16 animate-pulse rounded-lg bg-surface-2" />;
@@ -56,6 +58,14 @@ export function AppHeader({ page }: { page: "home" | "board" }) {
             {item("board", "榜单", page === "board")}
           </nav>
           <AuthSlot />
+          <a
+            href={REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="hidden rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-primary hover:text-fg sm:inline"
+          >
+            GitHub
+          </a>
         </div>
       </div>
     </header>

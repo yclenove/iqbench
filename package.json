@@ -3,6 +3,9 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "bin": {
+    "iqbench": "./scripts/cli.mjs"
+  },
   "overrides": {
     "nf3": "0.3.17"
   },

@@ -842,7 +842,7 @@ function Home() {
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[13px] text-muted">API Key（不入库、不上报）</span>
+              <span className="mb-1.5 block text-[13px] text-muted">API Key（明文不入库）</span>
               <input
                 type="password"
                 autoComplete="off"
@@ -853,6 +853,20 @@ function Home() {
               />
             </label>
           </div>
+          <p className="mt-3 text-[12px] leading-5 text-muted">
+            链路：浏览器 → 本站 <code className="font-mono text-[11px] text-faint">/api/bench/chat</code> →
+            你的网关。Key 只在这次请求内存里当 Authorization，不写库、不进榜。
+            不放心就自己跑源码，Key 只过你电脑：
+            <code className="ml-1 break-all font-mono text-[11px] text-faint">npx github:yclenove/iqbench</code>
+            <a
+              href="https://github.com/yclenove/iqbench"
+              target="_blank"
+              rel="noreferrer"
+              className="ml-1 text-fg underline decoration-primary/40 underline-offset-2 hover:text-primary"
+            >
+              源码
+            </a>
+          </p>
           <label className="mt-3 inline-flex items-start gap-2 text-[13px] leading-5 text-muted">
             <input
               type="checkbox"
