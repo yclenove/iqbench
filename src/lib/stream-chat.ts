@@ -4,6 +4,8 @@ export type StreamChatInput = {
   model: string;
   messages: Array<{ role: string; content: string }>;
   signal?: AbortSignal;
+  /** 单次请求超时，不含重试间隔。默认 90s。 */
+  timeoutMs?: number;
   onDelta?: (full: { content: string; reasoning: string }) => void;
   onRetry?: (attempt: number, max: number, reason: string) => void;
 };
@@ -23,14 +25,28 @@ function errText(err: unknown) {
   return err instanceof Error ? err.message : String(err);
 }
 
+function isGateway(err: unknown) {
+  return /HTTP 502|HTTP 503|HTTP 504|HTTP 524/.test(errText(err));
+}
+
 export function isRetryable(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return false;
   const msg = errText(err);
   if (err instanceof TypeError) return true;
-  // 5xx 全类 + 408/429 + 常见网络层错误（含 Cloudflare 52x、DNS、断连）
-  return /HTTP 408|HTTP 429|HTTP 5\d\d|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络/i.test(
+  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    return true;
+  }
+  return /HTTP 408|HTTP 429|HTTP 5\d\d|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络|aborted|AbortError/i.test(
     msg,
   );
+}
+
+function retryWait(err: unknown, attempt: number) {
+  const msg = errText(err);
+  if (/HTTP 429/.test(msg)) return Math.min(16000, 2000 * 2 ** (attempt - 1));
+  if (/upstream_saturated|并发上限|饱和/.test(msg)) return Math.min(12000, 2000 * 2 ** (attempt - 1));
+  if (isGateway(err)) return 400;
+  return Math.min(2000, 400 * 2 ** (attempt - 1));
 }
 
 function sleep(ms: number, signal?: AbortSignal) {
@@ -52,6 +68,10 @@ function sleep(ms: number, signal?: AbortSignal) {
 }
 
 async function streamChatOnce(input: StreamChatInput) {
+  const perTry = input.timeoutMs ?? 90_000;
+  const signal = input.signal
+    ? AbortSignal.any([input.signal, AbortSignal.timeout(perTry)])
+    : AbortSignal.timeout(perTry);
   const res = await fetch("/api/bench/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -61,7 +81,7 @@ async function streamChatOnce(input: StreamChatInput) {
       model: input.model,
       messages: input.messages,
     }),
-    signal: input.signal,
+    signal,
   });
 
   const ctype = res.headers.get("content-type") || "";
@@ -130,12 +150,10 @@ export async function streamChat(input: StreamChatInput) {
       return await streamChatOnce(input);
     } catch (err) {
       lastErr = err;
-      if (!isRetryable(err, input.signal) || attempt === max) throw err;
-      // 1s/2s/4s 退避，限流(429)再加倍
-      let wait = Math.min(8000, 1000 * 2 ** (attempt - 1));
-      if (/HTTP 429/.test(errText(err))) wait *= 2;
-      if (/upstream_saturated|并发上限|饱和/.test(errText(err))) wait = Math.min(20000, 3000 * 2 ** (attempt - 1));
-      input.onRetry?.(attempt, max, errText(err));
+      const gatewayCap = isGateway(err) && attempt >= 2;
+      if (!isRetryable(err, input.signal) || attempt === max || gatewayCap) throw err;
+      const wait = retryWait(err, attempt);
+      input.onRetry?.(attempt, isGateway(err) ? 2 : max, `${errText(err)} · ${wait}ms 后`);
       await sleep(wait, input.signal);
     }
   }

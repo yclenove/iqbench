@@ -29,6 +29,7 @@
   <img alt="units" src="https://img.shields.io/badge/units-18-241f18?style=flat-square">
   <img alt="probes" src="https://img.shields.io/badge/probes-15-3d352b?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/stack-TanStack%20Start-3d352b?style=flat-square">
+  <a href="CHANGELOG.md"><img alt="changelog" src="https://img.shields.io/badge/changelog-0.7.1-d4a24c?style=flat-square"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-d4a24c?style=flat-square"></a>
   <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-%E8%AE%A4%E5%8F%AF%E7%A4%BE%E5%8C%BA-16315c?style=flat-square"></a>
 </p>
@@ -159,7 +160,7 @@ npm run build && npm run preview
 ## 设计上的硬规矩
 
 - **Key 明文不入库、不上报、不进 Git。** 过手转发见上一节。
-- 思考级别固定 **xhigh**，流式输出；对话流 4 次退避重试，拉模型 / 云同步 / 对照拉取各带 3 次，云端写入幂等。
+- 思考级别固定 **xhigh**，流式输出。对话：502/504/524 只再试 1 次（400ms）；其它可恢复错误最多 4 次。拉模型 / 云同步 / 对照拉取各带 3 次。单次超时 = 该题 `timeBudget + 20s`。云端写入幂等。
 - 切 Key 换作用域：上一把的成绩不会串到下一把。
 - **断点续测：** 每题写入本机草稿。刷新后点「继续」，不会自动开跑。只重试网络/空答/中止，判错的不刷。题库换代的旧草稿作废。
 - 游客成绩留在这台浏览器；登录后才同步、才进公开模型榜 / 渠道榜。
@@ -181,6 +182,7 @@ migrations/            数据库结构（两个后端自动套用）
 scripts/verify-src.test.mjs  真源码打包直测，防测试漂移
 docs/                  README 用的图
 iqbench-spec.md        给外部模型 review 的完整规格
+CHANGELOG.md           面向使用者的改动记录
 ```
 
 ## 安全

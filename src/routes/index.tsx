@@ -474,6 +474,7 @@ function Home() {
               { role: "user", content: inst.prompt },
             ],
             signal: ac.signal,
+            timeoutMs: Math.min(180_000, Math.max(25_000, q.timeBudget * 1000 + 20_000)),
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
               setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
@@ -495,6 +496,7 @@ function Home() {
                 { role: "user", content: inst.prompt },
               ],
               signal: ac.signal,
+              timeoutMs: Math.min(90_000, Math.max(20_000, q.timeBudget * 500 + 15_000)),
               onDelta: ({ content: c, reasoning: r }) => {
                 const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
                 setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
