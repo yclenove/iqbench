@@ -1,4 +1,4 @@
-import { QUESTIONS, MAX_SCORE, modelIq } from "./questions";
+import { QUESTIONS, MAX_SCORE, UNITS, modelIq } from "./questions";
 import type { ProbeResult } from "./probes";
 import type { SvgCraft } from "./svg-craft";
 
@@ -56,6 +56,17 @@ export function baselineLine(iq: number, b: Baseline) {
   return `全网 ${b.runs} 次中位 IQ ${b.medIq}，本次 ${iq}（${sign}${b.delta}）${
     b.suspect ? " → 疑似降智渠道" : ""
   }`;
+}
+
+/** 各维度卷面得分，写入公开榜供维度榜聚合。 */
+export function dimBreakdown(items: Record<string, ItemSnap | undefined>) {
+  const out: Record<string, { s: number; m: number }> = {};
+  for (const u of UNITS) {
+    const rec = out[u.dim] ?? (out[u.dim] = { s: 0, m: 0 });
+    rec.m += u.score;
+    rec.s += items[u.id]?.score ?? 0;
+  }
+  return out;
 }
 
 export type BenchRun = {

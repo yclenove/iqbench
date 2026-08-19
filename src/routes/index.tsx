@@ -584,7 +584,9 @@ function Home() {
           <div className="mb-5 mt-6">
             <p className="kicker">Leaderboard</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight">榜单</h1>
-            <p className="mt-1 text-sm text-muted">公开榜来自登录用户。点本机历史回到测评对照，测评不会被卸掉。</p>
+            <p className="mt-1 text-sm text-muted">
+              模型看中位，渠道看相对增益，同模跨渠拆开网关水分。点模型名进对照。
+            </p>
           </div>
           <BenchArchive
             signedIn={Boolean(user)}

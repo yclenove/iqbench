@@ -15,13 +15,23 @@ import {
 import {
   clearMyCloudRuns,
   deleteCloudRun,
-  publicChannelBoard,
-  publicModelBoard,
+  publicBoardPack,
   whoamiAdmin,
   wipePublicBoards,
   type PublicChannelRow,
+  type PublicDimRow,
   type PublicModelRow,
+  type PublicPairRow,
 } from "@/lib/bench-db";
+import {
+  InsightStrip,
+  PublicChannelTable,
+  PublicDimBoard,
+  PublicModelTable,
+  PublicPairBoard,
+} from "@/components/bench-boards";
+
+type Tab = "public-model" | "public-channel" | "public-pair" | "public-dim" | "local";
 
 export function BenchArchive({
   signedIn,
@@ -39,8 +49,11 @@ export function BenchArchive({
   const localChannels = channelBoard(runs);
   const [cloudModels, setCloudModels] = useState<PublicModelRow[]>([]);
   const [cloudChannels, setCloudChannels] = useState<PublicChannelRow[]>([]);
+  const [pairs, setPairs] = useState<PublicPairRow[]>([]);
+  const [dims, setDims] = useState<PublicDimRow[]>([]);
   const [admin, setAdmin] = useState(false);
-  const [tab, setTab] = useState<"public-model" | "public-channel" | "local">("public-model");
+  const [tab, setTab] = useState<Tab>("public-model");
+  const [focusModel, setFocusModel] = useState("");
 
   useEffect(() => {
     setRuns(loadRuns());
@@ -50,12 +63,19 @@ export function BenchArchive({
     whoamiAdmin()
       .then((s) => setAdmin(Boolean(s.admin)))
       .catch(() => setAdmin(false));
-    publicModelBoard()
-      .then(setCloudModels)
-      .catch(() => setCloudModels([]));
-    publicChannelBoard()
-      .then(setCloudChannels)
-      .catch(() => setCloudChannels([]));
+    publicBoardPack()
+      .then((pack) => {
+        setCloudModels(pack.models);
+        setCloudChannels(pack.channels);
+        setPairs(pack.pairs);
+        setDims(pack.dims);
+      })
+      .catch(() => {
+        setCloudModels([]);
+        setCloudChannels([]);
+        setPairs([]);
+        setDims([]);
+      });
   }, [refresh]);
 
   const reload = () => {
@@ -85,12 +105,19 @@ export function BenchArchive({
       .catch(() => reload());
   };
 
+  const openPair = (model: string) => {
+    setFocusModel(model);
+    setTab("public-pair");
+  };
+
   const tabs = (
     <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full border border-border bg-surface p-1">
       {(
         [
-          ["public-model", "公开模型"],
-          ["public-channel", "公开渠道"],
+          ["public-model", "模型"],
+          ["public-channel", "渠道"],
+          ["public-pair", "同模跨渠"],
+          ["public-dim", "维度"],
           ["local", "本机"],
         ] as const
       ).map(([id, label]) => (
@@ -98,7 +125,7 @@ export function BenchArchive({
           key={id}
           type="button"
           onClick={() => setTab(id)}
-          className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
+          className={`rounded-full px-3 py-1.5 text-sm transition-colors sm:px-4 ${
             tab === id ? "bg-primary font-medium text-primary-fg" : "text-muted hover:text-fg"
           }`}
         >
@@ -178,12 +205,15 @@ export function BenchArchive({
     <div>
       {tabs}
       {tab === "local" || admin ? tools : null}
+      {tab !== "local" ? <InsightStrip models={cloudModels} channels={cloudChannels} /> : null}
       {tab === "public-model" ? (
-        <PublicModelTable title="公开 · 模型榜" rows={cloudModels} />
+        <PublicModelTable rows={cloudModels} pairs={pairs} onOpenModel={openPair} />
       ) : null}
-      {tab === "public-channel" ? (
-        <PublicChannelTable title="公开 · 渠道榜" rows={cloudChannels} />
+      {tab === "public-channel" ? <PublicChannelTable rows={cloudChannels} /> : null}
+      {tab === "public-pair" ? (
+        <PublicPairBoard pairs={pairs} focus={focusModel} onFocus={setFocusModel} />
       ) : null}
+      {tab === "public-dim" ? <PublicDimBoard rows={dims} /> : null}
       {tab === "local" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {history}
@@ -294,82 +324,6 @@ function ChannelTable({ title, rows }: { title: string; rows: ChannelRow[] }) {
                     <Flags web={r.webSuspect} juice={r.juiceSeen} dumb={r.iqSuspect} />
                   </td>
                   <td className={`${cell} tabular-nums`}>{r.runs}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </CardShell>
-  );
-}
-
-function PublicModelTable({ title, rows }: { title: string; rows: PublicModelRow[] }) {
-  return (
-    <CardShell title={title} empty="公开榜还是空的">
-      {rows.length === 0 ? null : (
-        <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[440px] text-sm">
-            <thead>
-              <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
-                <th className={headCell}>#</th>
-                <th className={headCell}>模型</th>
-                <th className={headCell}>最佳 IQ</th>
-                <th className={headCell}>卷面</th>
-                <th className={headCell}>知识</th>
-                <th className={headCell}>样本</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.model} className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2/40">
-                  <td className={`${cell} font-mono text-primary`}>{i + 1}</td>
-                  <td className={`${cell} font-medium`}>{r.model}</td>
-                  <td className={`${cell} tabular-nums`}>
-                    <span className="font-serif text-base font-bold text-primary">{r.best_iq}</span>
-                  </td>
-                  <td className={`${cell} tabular-nums`}>{r.best_score}</td>
-                  <td className={`${cell} font-mono text-xs tabular-nums text-muted`}>{r.freshness ?? "—"}</td>
-                  <td className={`${cell} tabular-nums`}>{r.runs}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </CardShell>
-  );
-}
-
-function PublicChannelTable({ title, rows }: { title: string; rows: PublicChannelRow[] }) {
-  return (
-    <CardShell title={title} empty="还没有登录用户贡献渠道数据">
-      {rows.length === 0 ? null : (
-        <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[440px] text-sm">
-            <thead>
-              <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
-                <th className={headCell}>#</th>
-                <th className={headCell}>渠道</th>
-                <th className={headCell}>均 IQ</th>
-                <th className={headCell}>巅峰 IQ</th>
-                <th className={headCell}>鉴定</th>
-                <th className={headCell}>模型数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.host} className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2/40">
-                  <td className={`${cell} font-mono text-primary`}>{i + 1}</td>
-                  <td className={`${cell} font-medium`}>{r.host}</td>
-                  <td className={`${cell} tabular-nums`}>
-                    <span className="font-serif text-base font-bold text-primary">{r.avg_iq}</span>
-                  </td>
-                  <td className={`${cell} tabular-nums`}>{r.best_iq}</td>
-                  <td className={`${cell} text-xs`}>
-                    <Flags web={r.web_suspect} juice={r.juice_seen} dumb={r.iq_suspect} />
-                  </td>
-                  <td className={`${cell} tabular-nums`}>{r.models}</td>
                 </tr>
               ))}
             </tbody>
