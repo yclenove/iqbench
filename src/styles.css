@@ -126,6 +126,10 @@
     min-height: 220px;
     aspect-ratio: 16 / 10;
   }
+  .salon-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 280px;
+  }
   .is-narrow .btn-grid {
     display: grid !important;
     grid-template-columns: 1fr !important;

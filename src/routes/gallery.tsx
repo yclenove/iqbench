@@ -5,7 +5,7 @@ import { AppHeader } from "@/components/app-header";
 import { JntmBanner } from "@/components/jntm-banner";
 import { publicPelicanWall } from "@/lib/bench-db";
 import { displayHost, loadRuns } from "@/lib/bench-store";
-import { gallerySrcDoc } from "@/lib/judge";
+import { PelicanLive } from "@/components/pelican-frame";
 import { mergePieces, piecesFromRuns, type PelicanPiece } from "@/lib/pelican-wall";
 import { craftLine } from "@/lib/svg-craft";
 
@@ -17,19 +17,6 @@ export const Route = createFileRoute("/gallery")({
 });
 
 type Filter = "all" | "pass" | "fail" | "local";
-
-function Frame({ piece, hero }: { piece: PelicanPiece; hero?: boolean }) {
-  const src = gallerySrcDoc(piece.html, piece.svg);
-  return (
-    <div className={`salon-frame ${hero ? "salon-frame-hero" : ""}`}>
-      {src ? (
-        <iframe sandbox="" title={`${piece.model} 鹈鹕`} srcDoc={src} className="absolute inset-0 h-full w-full border-0" />
-      ) : (
-        <p className="absolute inset-0 grid place-items-center text-sm text-ink/50">没有画面</p>
-      )}
-    </div>
-  );
-}
 
 function GalleryPage() {
   const [remote, setRemote] = useState<PelicanPiece[]>([]);
@@ -123,9 +110,20 @@ function GalleryPage() {
         ) : (
           <>
             {star ? (
-              <button type="button" onClick={() => setOpen(star)} className="card mt-10 w-full overflow-hidden p-0 text-left">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpen(star)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setOpen(star);
+                  }
+                }}
+                className="card mt-10 w-full cursor-pointer overflow-hidden p-0 text-left"
+              >
                 <div className="grid md:grid-cols-2">
-                  <Frame piece={star} hero />
+                  <PelicanLive html={star.html} svg={star.svg} title={star.model} hero />
                   <div className="flex flex-col justify-between p-5 sm:p-7">
                     <div>
                       <p className="kicker">馆藏头条</p>
@@ -140,18 +138,25 @@ function GalleryPage() {
                     </p>
                   </div>
                 </div>
-              </button>
+              </div>
             ) : null}
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {rest.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setOpen(p)}
-                  className="card overflow-hidden p-0 text-left transition-transform hover:-translate-y-0.5"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpen(p);
+                    }
+                  }}
+                  className="card salon-card cursor-pointer overflow-hidden p-0 text-left transition-transform hover:-translate-y-0.5"
                 >
-                  <Frame piece={p} />
+                  <PelicanLive html={p.html} svg={p.svg} title={p.model} />
                   <div className="border-t border-border px-3 py-2.5">
                     <p className="truncate text-sm font-medium">{p.model}</p>
                     <p className="mt-0.5 truncate font-mono text-[11px] text-muted">
@@ -160,7 +165,7 @@ function GalleryPage() {
                       {p.local ? " · 本机" : ""}
                     </p>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </>
@@ -184,7 +189,7 @@ function GalleryPage() {
             >
               <X className="size-4" />
             </button>
-            <Frame piece={open} hero />
+            <PelicanLive html={open.html} svg={open.svg} title={open.model} hero />
             <div className="p-4 sm:p-5">
               <p className="font-serif text-xl">{open.model}</p>
               <p className="mt-1 text-sm text-muted">

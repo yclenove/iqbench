@@ -18,6 +18,10 @@ export type ItemSnap = {
   svg?: string;
   html?: string;
   craft?: SvgCraft;
+  /** 模型正文摘录，方便逐题复盘空答/截断 */
+  preview?: string;
+  /** 本题过程：finish、思考字数、压缩重试 */
+  trace?: string;
 };
 
 export type ModelSnap = {
@@ -189,6 +193,8 @@ export function compactResults(
           svg?: string;
           html?: string;
           craft?: SvgCraft;
+          preview?: string;
+          trace?: string;
         }
       >;
       probe?: ProbeResult;
@@ -218,6 +224,8 @@ export function compactResults(
           tags: it.tags,
           seconds: it.seconds,
           detail: (it.detail || "").slice(0, 240),
+          preview: (it.preview || "").slice(0, 2500) || undefined,
+          trace: (it.trace || "").slice(0, 1200) || undefined,
           svg: (it.svg || "").slice(0, 80000) || undefined,
           html: (it.html || "").slice(0, 80000) || undefined,
           craft: it.craft,

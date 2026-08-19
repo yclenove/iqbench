@@ -12,10 +12,13 @@ import {
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { AppHeader } from "@/components/app-header";
 import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
-import { extractHtml, extractSvg, gallerySrcDoc, isGatewayJunk, judgeItem, pickVisibleAnswer, shortFail } from "@/lib/judge";
+import { PelicanLive } from "@/components/pelican-frame";
+import { extractHtml, extractSvg, isGatewayJunk, judgeItem, looksLikeDraw, pickVisibleAnswer, shortFail } from "@/lib/judge";
 import { craftLine, priorCraftScores, scoreCraft } from "@/lib/svg-craft";
 import { listModels } from "@/lib/proxy";
 import { streamChat, withRetry } from "@/lib/stream-chat";
+import { EFFORT_LABEL, EFFORTS, expandQueue, isEffort, isEffortAlias, parseSlot, type Effort } from "@/lib/effort";
+import { highestEffortFor, outputCap, specEffortsFor, specSummary, type SpecIndex } from "@/lib/model-spec";
 import { buildReportHtml, downloadReport } from "@/lib/report";
 import {
   baselineLine,
@@ -86,6 +89,7 @@ type ItemResult = {
   svg?: string;
   html?: string;
   craft?: import("@/lib/svg-craft").SvgCraft;
+  trace?: string;
 };
 type ModelResult = {
   items: Record<string, ItemResult>;
@@ -110,6 +114,7 @@ function failBadge(tags?: string[]) {
   if (/已停止/.test(t)) return "停";
   if (/超时/.test(t)) return "TO";
   if (/空答|无产出|超预算/.test(t)) return "空";
+  if (/截断/.test(t)) return "截";
   return t.length > 4 ? t.slice(0, 4) : t;
 }
 
@@ -127,7 +132,7 @@ function mapRun(run: BenchRun): Record<string, ModelResult> {
       items: Object.fromEntries(
         Object.entries(m.items).map(([id, it]) => [
           id,
-          { ...it, preview: "", svg: it.svg || "", html: it.html || "" },
+          { ...it, preview: it.preview || "", svg: it.svg || "", html: it.html || "", trace: it.trace },
         ]),
       ),
     };
@@ -140,8 +145,13 @@ function Home() {
   const navigate = useNavigate();
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [apiStyle, setApiStyle] = useState<"auto" | "chat" | "responses">("auto");
   const [rememberKey, setRememberKey] = useState(false);
   const [workers, setWorkers] = useState(3);
+  const [efforts, setEfforts] = useState<Effort[]>(["xhigh"]);
+  const [effortMap, setEffortMap] = useState<Record<string, Effort[]>>({});
+  const [effortMode, setEffortMode] = useState<"manual" | "spec">("manual");
+  const [specs, setSpecs] = useState<SpecIndex | null>(null);
   const [probeOn, setProbeOn] = useState(true);
   const [hostPublic, setHostPublic] = useState(false);
   const [models, setModels] = useState<ModelOpt[]>([]);
@@ -174,11 +184,19 @@ function Home() {
         workers?: number;
         probe?: boolean;
         hostPublic?: boolean;
+        efforts?: string[];
+        effortMode?: string;
+        apiStyle?: string;
       };
       if (c.base) setBaseUrl(c.base);
       if (c.workers) setWorkers(Math.min(8, Math.max(1, c.workers)));
       if (typeof c.probe === "boolean") setProbeOn(c.probe);
       if (typeof c.hostPublic === "boolean") setHostPublic(c.hostPublic);
+      if (Array.isArray(c.efforts) && c.efforts.some(isEffort)) {
+        setEfforts(c.efforts.filter(isEffort));
+      }
+      if (c.effortMode === "spec" || c.effortMode === "manual") setEffortMode(c.effortMode);
+      if (c.apiStyle === "auto" || c.apiStyle === "chat" || c.apiStyle === "responses") setApiStyle(c.apiStyle);
       const sessionKey = sessionStorage.getItem("iqbench_key");
       if (sessionKey) {
         setApiKey(sessionKey);
@@ -261,13 +279,74 @@ function Home() {
   const append = (line: string) => setLog((s) => s + line + "\n");
 
   const saveCfg = () => {
-    localStorage.setItem("iqbench_cfg", JSON.stringify({ base: baseUrl, workers, probe: probeOn }));
+    localStorage.setItem(
+      "iqbench_cfg",
+      JSON.stringify({ base: baseUrl, workers, probe: probeOn, efforts, effortMode, apiStyle }),
+    );
     saveHostPublicPref(hostOf(baseUrl), hostPublic);
     if (rememberKey && apiKey) sessionStorage.setItem("iqbench_key", apiKey);
     else sessionStorage.removeItem("iqbench_key");
   };
 
   const selected = models.filter((m) => picked[m.id]).map((m) => m.id);
+  const cloneCount = useMemo(() => expandQueue(selected, effortMap).length, [selected, effortMap]);
+
+  function defaultEffortsFor(id: string): Effort[] {
+    if (isEffortAlias(id)) return ["none"];
+    return [highestEffortFor(specs, id)];
+  }
+
+  function seedMap(ids: string[], prev: Record<string, Effort[]> = {}) {
+    const next: Record<string, Effort[]> = {};
+    for (const id of ids) {
+      next[id] = prev[id]?.length ? prev[id] : defaultEffortsFor(id);
+    }
+    return next;
+  }
+
+  useEffect(() => {
+    setEffortMap((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const id of selected) {
+        const def = defaultEffortsFor(id);
+        if (!prev[id]?.length) {
+          next[id] = def;
+          changed = true;
+        } else if (specs && prev[id].length === 1 && prev[id][0] === "xhigh" && def[0] !== "xhigh") {
+          next[id] = def;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected.join("|"), specs]);
+
+  function toggleModelEffort(id: string, e: Effort) {
+    if (isEffortAlias(id)) return;
+    setEffortMap((prev) => {
+      const cur = prev[id]?.length ? prev[id] : defaultEffortsFor(id);
+      const on = cur.includes(e);
+      const next = on ? cur.filter((x) => x !== e) : [...cur, e];
+      return { ...prev, [id]: next.length ? next : cur };
+    });
+  }
+
+  async function loadSpecs() {
+    try {
+      const res = await fetch("/api/model-specs");
+      if (!res.ok) return;
+      const data = (await res.json()) as { specs?: SpecIndex };
+      if (data.specs) setSpecs(data.specs);
+    } catch {
+      /* 规格库失败时用手选 */
+    }
+  }
+
+  useEffect(() => {
+    void loadSpecs();
+  }, []);
   const visibleModels = useMemo(() => {
     const q = modelQuery.trim().toLowerCase();
     if (!q) return models;
@@ -287,7 +366,13 @@ function Home() {
         next[m.id] = m.kind === "chat";
       });
       setPicked(next);
+      setEffortMap(
+        seedMap(
+          data.models.filter((m) => next[m.id]).map((m) => m.id),
+        ),
+      );
       append(`拉到 ${data.models.length} 个模型`);
+      if (!specs) void loadSpecs();
       setStatus("模型已加载");
     } catch (e) {
       append("模型列表失败: " + (e instanceof Error ? e.message : String(e)));
@@ -301,6 +386,7 @@ function Home() {
       next[m.id] = m.kind !== "media";
     });
     setPicked(next);
+    setEffortMap(seedMap(Object.keys(next).filter((id) => next[id])));
   }
 
   function pickVisible(on: boolean) {
@@ -309,6 +395,7 @@ function Home() {
       visibleModels.forEach((m) => {
         next[m.id] = on;
       });
+      setEffortMap(seedMap(Object.keys(next).filter((id) => next[id])));
       return next;
     });
   }
@@ -319,6 +406,7 @@ function Home() {
       visibleModels.forEach((m) => {
         next[m.id] = !p[m.id];
       });
+      setEffortMap(seedMap(Object.keys(next).filter((id) => next[id])));
       return next;
     });
   }
@@ -405,7 +493,7 @@ function Home() {
         setStatus("先拉模型并至少选一个");
         return;
       }
-      modelIds = selected;
+      modelIds = expandQueue(selected, effortMap);
       for (const model of modelIds) {
         nextResults[model] = { items: {}, total: 0, max: MAX_SCORE, seconds: 0, iq: 70 };
       }
@@ -445,7 +533,7 @@ function Home() {
     setResults({ ...nextResults });
     snapDraft(modelIds, nextResults);
     append(
-      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : ""}，${nWorkers} 路并行 · bench v7`,
+      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : ""}，${nWorkers} 路并行 · 出战 ${modelIds.length} · bench v7`,
     );
 
     const ac = new AbortController();
@@ -466,35 +554,60 @@ function Home() {
         const t0 = performance.now();
         let content = "";
         let preview = "";
+        const traceLines: string[] = [];
         try {
           const resp = await streamChat({
             baseUrl: baseUrl.trim(),
             apiKey: apiKey.trim(),
-            model,
+            model: parseSlot(model).model,
+            reasoningEffort: parseSlot(model).effort,
             messages: [
               { role: "system", content: q.system ?? QUESTIONS.system },
               { role: "user", content: inst.prompt },
             ],
             signal: ac.signal,
-            timeoutMs: Math.min(180_000, Math.max(25_000, q.timeBudget * 1000 + 20_000)),
-            maxTokens: 131072,
+            timeoutMs: 600_000,
+            idleMs: 50_000,
+            thinkHoldMs: 180_000,
+            maxTokens: outputCap(specs, parseSlot(model).model),
+            apiStyle,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
               setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
             },
             onRetry: (attempt, max, reason) => {
-              append(`  ${tag} 网络抖动，重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
+              const line = `网络抖动 ${attempt}/${max}：${reason.slice(0, 80)}`;
+              traceLines.push(line);
+              append(`  ${tag} ${line}`);
             },
           });
+          const bodyLen = (resp.content || "").trim().length;
+          const thoughtLen = (resp.reasoning || "").trim().length;
+          let thoughtBank = (resp.reasoning || "").trim();
+          traceLines.push(
+            `第1次 finish=${resp.finish || "stop"} 正文${bodyLen}字 思考${thoughtLen}字`,
+          );
           let picked = pickVisibleAnswer(resp.content || "", resp.reasoning || "", resp.finish);
+          if (q.id === "Q17" && picked.from === "thought") {
+            picked = { text: "", cut: true, from: "none" };
+          }
+          if (q.id === "Q16" && picked.from === "thought" && !looksLikeDraw(picked.text)) {
+            picked = { text: "", cut: true, from: "none" };
+          }
           content = picked.text;
           preview = (resp.content || "").slice(0, 2500);
-          if ((!content.trim() || picked.cut) && !stopRef.current) {
-            append(`  ${tag} ${picked.cut ? "思考/输出被截断" : "正文为空"}，压缩重试`);
+          if (!preview.trim() && thoughtLen) {
+            preview = `【思考摘录 ${thoughtLen}字】\n${(resp.reasoning || "").trim().slice(-900)}`;
+          }
+          if ((!content.trim() || (picked.cut && picked.from === "body")) && !stopRef.current) {
+            const why = picked.cut ? "思考/输出被截断" : "正文为空";
+            traceLines.push(`${why}，压缩重试`);
+            append(`  ${tag} ${why}，压缩重试`);
             const again = await streamChat({
               baseUrl: baseUrl.trim(),
               apiKey: apiKey.trim(),
-              model,
+              model: parseSlot(model).model,
+              reasoningEffort: parseSlot(model).effort,
               messages: [
                 {
                   role: "system",
@@ -503,45 +616,71 @@ function Home() {
                 { role: "user", content: inst.prompt },
               ],
               signal: ac.signal,
-              timeoutMs: Math.min(120_000, Math.max(20_000, q.timeBudget * 700 + 15_000)),
-              maxTokens: 131072,
+              timeoutMs: 300_000,
+              idleMs: 50_000,
+              thinkHoldMs: 180_000,
+              maxTokens: outputCap(specs, parseSlot(model).model),
+              apiStyle,
               onDelta: ({ content: c, reasoning: r }) => {
                 const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
                 setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
               },
               onRetry: (attempt, max, reason) => {
-                append(`  ${tag} 压缩重试 ${attempt}/${max}：${reason.slice(0, 80)}`);
+                const line = `压缩通道网络 ${attempt}/${max}：${reason.slice(0, 80)}`;
+                traceLines.push(line);
+                append(`  ${tag} ${line}`);
               },
             });
+            const againBody = (again.content || "").trim().length;
+            const againThought = (again.reasoning || "").trim().length;
+            traceLines.push(
+              `压缩重试 finish=${again.finish || "stop"} 正文${againBody}字 思考${againThought}字`,
+            );
             const second = pickVisibleAnswer(again.content || "", again.reasoning || "", again.finish);
-            if (second.text.trim() && (!content.trim() || !second.cut)) {
-              content = second.text;
+            const secondUse =
+              q.id === "Q17" && second.from === "thought"
+                ? { text: "", cut: true, from: "none" as const }
+                : q.id === "Q16" && second.from === "thought" && !looksLikeDraw(second.text)
+                  ? { text: "", cut: true, from: "none" as const }
+                  : second;
+            if ((again.reasoning || "").trim().length > thoughtBank.length) {
+              thoughtBank = (again.reasoning || "").trim();
+            }
+            if (secondUse.text.trim() && (!content.trim() || !secondUse.cut)) {
+              content = secondUse.text;
               preview = (again.content || "").slice(0, 2500);
-              picked = second;
+              if (!preview.trim() && againThought) {
+                preview = `【思考摘录 ${againThought}字】\n${(again.reasoning || "").trim().slice(-900)}`;
+              }
+              picked = secondUse;
             }
             if (picked.cut && content.trim()) {
               preview = `输出截断（思考未完成）\n${preview}`;
             }
           }
           if (
-            picked.cut &&
-            content &&
-            q.id !== "Q16" &&
+            !content.trim() &&
+            thoughtBank &&
             q.id !== "Q17" &&
-            !/(?:最终答案|答案)\s*[:：]/.test(content)
+            (q.id !== "Q16" || looksLikeDraw(thoughtBank))
           ) {
-            preview = `输出截断（思考未完成）\n${content.slice(0, 400)}`;
-            content = "";
+            content = thoughtBank;
+            picked = { text: thoughtBank, cut: true, from: "thought" };
+            traceLines.push("正文被掐，用思维链判分");
+            if (!preview.trim()) preview = `【思考摘录 ${thoughtBank.length}字】\n${thoughtBank.slice(-900)}`;
           }
         } catch (e) {
           if (stopRef.current || (e instanceof Error && e.name === "AbortError")) {
             preview = "已停止";
+            traceLines.push("已停止");
           } else {
             preview = e instanceof Error ? e.message : String(e);
+            traceLines.push(`异常：${preview.slice(0, 200)}`);
           }
         }
         const dt = (performance.now() - t0) / 1000;
         const failTag = emptyFailTag(preview);
+        const trace = traceLines.filter(Boolean).join("\n");
         const judged = content
           ? judgeItem(q, content, dt, inst.judge)
           : { ok: false, score: 0, accuracy: 0, speedFactor: 0, detail: preview || failTag, tags: [failTag] };
@@ -556,6 +695,7 @@ function Home() {
             memorized21: j.memorized21,
             tags: j.tags,
             preview,
+            trace,
             ...more,
           };
         };
@@ -638,7 +778,8 @@ function Home() {
           const resp = await streamChat({
             baseUrl: baseUrl.trim(),
             apiKey: apiKey.trim(),
-            model,
+            model: parseSlot(model).model,
+            reasoningEffort: parseSlot(model).effort,
             messages: [
               { role: "system", content: PROBE_SYSTEM },
               { role: "user", content: question },
@@ -646,6 +787,8 @@ function Home() {
             signal: ac.signal,
             timeoutMs: PROBE_TIMEOUT_MS,
             retries: 2,
+            maxTokens: Math.min(8192, outputCap(specs, parseSlot(model).model)),
+            apiStyle,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-160)}\n` : "") + c.slice(-300);
               setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
@@ -929,6 +1072,38 @@ function Home() {
               />
             </label>
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-muted">
+            <span className="shrink-0">协议</span>
+            {(
+              [
+                ["auto", "自动"],
+                ["chat", "chat/completions"],
+                ["responses", "responses"],
+              ] as const
+            ).map(([id, label]) => (
+              <label
+                key={id}
+                className={`inline-flex cursor-pointer items-center rounded-full border px-2.5 py-1 font-mono text-[11px] ${
+                  apiStyle === id ? "border-primary/70 bg-primary/10 text-fg" : "border-border hover:border-border-strong"
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="sr-only"
+                  checked={apiStyle === id}
+                  onChange={() => setApiStyle(id)}
+                />
+                {label}
+              </label>
+            ))}
+            <span className="text-faint">
+              {apiStyle === "responses"
+                ? "只打 /v1/responses（Codex）"
+                : apiStyle === "chat"
+                  ? "只打 /v1/chat/completions"
+                  : "先 chat，404 再改 responses"}
+            </span>
+          </div>
           <p className="mt-3 text-[12px] leading-5 text-muted">
             链路：浏览器 → 本站 <code className="font-mono text-[11px] text-faint">/api/bench/chat</code> →
             你的网关。Key 只在这次请求内存里当 Authorization，不写库、不进榜。
@@ -1136,6 +1311,7 @@ function Home() {
             <span className="font-mono text-[11px] text-muted">
               已选 {selected.length}/{models.length}
               {modelQuery.trim() ? ` · 可见 ${visibleModels.length}` : ""}
+              {selected.length ? ` · 出战 ${cloneCount} 路` : ""}
             </span>
           </div>
           <div className="mt-2 flex max-h-52 flex-wrap gap-2 overflow-auto">
@@ -1160,11 +1336,85 @@ function Home() {
                     onChange={(e) => setPicked((p) => ({ ...p, [m.id]: e.target.checked }))}
                   />
                   <span className="max-w-[220px] truncate sm:max-w-none">{m.id}</span>
-                  <span className="text-faint">{m.kind}</span>
+                  {isEffortAlias(m.id) ? (
+                    <span className="text-faint">别名</span>
+                  ) : (
+                    <span className="text-faint">{m.kind}</span>
+                  )}
                 </label>
               ))
             )}
           </div>
+          {selected.length ? (
+            <div className="mt-4 border-t border-border/60 pt-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-[13px] text-muted">
+                <span className="kicker kicker-dim mb-0">出战思考</span>
+                <span className="text-faint">不选则用规格最高档；点多档才拆影分身。别名不传 reasoning。</span>
+                <button
+                  type="button"
+                  className="text-[11px] text-primary hover:underline"
+                  onClick={() => setEffortMap(seedMap(selected, {}))}
+                >
+                  全部回到最高档
+                </button>
+                <button
+                  type="button"
+                  className="text-[11px] text-primary hover:underline"
+                  onClick={() => {
+                    const next: Record<string, Effort[]> = {};
+                    for (const id of selected) next[id] = specEffortsFor(specs, id);
+                    setEffortMap(next);
+                  }}
+                >
+                  已选拆全档
+                </button>
+              </div>
+              <div className="max-h-64 space-y-2 overflow-auto">
+                {selected.map((id) => {
+                  const alias = isEffortAlias(id);
+                  const cur = effortMap[id] || defaultEffortsFor(id);
+                  const allowed = specEffortsFor(specs, id);
+                  const hi = highestEffortFor(specs, id);
+                  return (
+                    <div key={id} className="rounded-lg border border-border bg-surface-2 px-3 py-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <p className="min-w-0 truncate font-mono text-xs text-fg">{id}</p>
+                        <p className="font-mono text-[10px] text-faint">{specSummary(specs, id)}</p>
+                      </div>
+                      {alias ? (
+                        <p className="mt-1 text-[11px] text-muted">渠道别名已带级别，请求不传 reasoning；输出上限仍按规格</p>
+                      ) : (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          {EFFORTS.map((e) => (
+                            <button
+                              key={e}
+                              type="button"
+                              onClick={() => toggleModelEffort(id, e)}
+                              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
+                                cur.includes(e)
+                                  ? "border-primary/70 bg-primary/10 text-fg"
+                                  : "border-border text-muted"
+                              } ${allowed.includes(e) || e === "none" ? "" : "opacity-50"}`}
+                              title={e === hi ? "规格最高档（默认）" : allowed.includes(e) ? "规格支持" : "规格未列"}
+                            >
+                              {EFFORT_LABEL[e]}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            className="ml-1 text-[10px] text-primary hover:underline"
+                            onClick={() => setEffortMap((p) => ({ ...p, [id]: specEffortsFor(specs, id) }))}
+                          >
+                            拆全档
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         {fresh ? null : (
@@ -1419,12 +1669,7 @@ function Home() {
                     </div>
                     <div className="gallery-frame">
                       {it.html || it.svg ? (
-                        <iframe
-                          sandbox="allow-same-origin"
-                          title={`${m} pelican`}
-                          srcDoc={gallerySrcDoc(it.html, it.svg)}
-                          className="absolute inset-0 h-full w-full border-0"
-                        />
+                        <PelicanLive html={it.html} svg={it.svg} title={`${m} pelican`} />
                       ) : (
                         <p className="absolute inset-0 grid place-items-center p-6 text-sm text-ink/60">
                           无 HTML/SVG 代码
@@ -1463,8 +1708,16 @@ function Home() {
                           {it.speedFactor.toFixed(2)} = {it.score}/{q.score} · {it.seconds}s
                         </p>
                         <p className="text-xs text-muted">{it.detail}</p>
+                        {it.tags?.length ? (
+                          <p className="mt-0.5 font-mono text-[10px] text-faint">{it.tags.join(" · ")}</p>
+                        ) : null}
+                        {it.trace ? (
+                          <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-4 text-primary/80">
+                            {it.trace}
+                          </p>
+                        ) : null}
                         <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-fg/70">
-                          {(it.preview || "").slice(-1200)}
+                          {(it.preview || "").trim() ? (it.preview || "").slice(-2000) : "（无正文，可能在思考阶段被掐断）"}
                         </pre>
                       </div>
                     );

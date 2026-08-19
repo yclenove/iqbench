@@ -4,16 +4,30 @@ export type StreamChatInput = {
   model: string;
   messages: Array<{ role: string; content: string }>;
   signal?: AbortSignal;
-  /** 单次请求超时，不含重试间隔。默认 90s。 */
+  /** 硬顶。还在吐字就不会因这值被掐。默认 10 分钟。 */
   timeoutMs?: number;
+  /** 连续无新字节才断。默认 50s。正文还没出现时用 thinkHoldMs。 */
+  idleMs?: number;
+  /** 只有思考、还没有正文时，允许多久不吐新字节。默认 180s。 */
+  thinkHoldMs?: number;
   /** 最多尝试次数（含第一次）。默认 4；502/504 仍最多 2。 */
   retries?: number;
   maxTokens?: number;
+  reasoningEffort?: string;
+  /** auto：chat 404 再改 responses；chat / responses 强制单一协议。 */
+  apiStyle?: "auto" | "chat" | "responses";
   onDelta?: (full: { content: string; reasoning: string }) => void;
   onRetry?: (attempt: number, max: number, reason: string) => void;
 };
 
 function takeDelta(obj: Record<string, unknown>) {
+  const err = obj.error;
+  if (typeof err === "string" && err.trim()) throw new Error(err.trim());
+  if (err && typeof err === "object") {
+    const rec = err as { message?: unknown; code?: unknown };
+    const msg = typeof rec.message === "string" ? rec.message : JSON.stringify(err);
+    throw new Error(msg);
+  }
   const choices = obj.choices as Array<Record<string, unknown>> | undefined;
   const ch0 = choices?.[0] ?? {};
   const delta = (ch0.delta as Record<string, string> | undefined) ?? {};
@@ -33,6 +47,13 @@ function isGateway(err: unknown) {
   return /HTTP 502|HTTP 503|HTTP 504|HTTP 524/.test(errText(err));
 }
 
+function isServerBlip(err: unknown) {
+  const msg = errText(err);
+  return /HTTP\s*5\d\d|\b50[0-4]\b|Internal Server Error|"error"\s*:\s*"?(?:HTTP\s*)?5\d\d|Bad Gateway|Service Unavailable|Gateway Timeout|cf-error/i.test(
+    msg,
+  );
+}
+
 export function isRetryable(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return false;
   const msg = errText(err);
@@ -40,7 +61,8 @@ export function isRetryable(err: unknown, signal?: AbortSignal) {
   if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
     return true;
   }
-  return /HTTP 408|HTTP 429|HTTP 5\d\d|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络|aborted|AbortError/i.test(
+  if (isServerBlip(err)) return true;
+  return /HTTP 408|HTTP 429|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络|aborted|AbortError|空完成|无 output_text/i.test(
     msg,
   );
 }
@@ -49,6 +71,7 @@ function retryWait(err: unknown, attempt: number) {
   const msg = errText(err);
   if (/HTTP 429/.test(msg)) return Math.min(16000, 2000 * 2 ** (attempt - 1));
   if (/upstream_saturated|并发上限|饱和/.test(msg)) return Math.min(12000, 2000 * 2 ** (attempt - 1));
+  if (/\b500\b|Internal Server Error/.test(msg)) return Math.min(8000, 1000 * 2 ** (attempt - 1));
   if (isGateway(err)) return 400;
   return Math.min(2000, 400 * 2 ** (attempt - 1));
 }
@@ -72,78 +95,96 @@ function sleep(ms: number, signal?: AbortSignal) {
 }
 
 async function streamChatOnce(input: StreamChatInput) {
-  const perTry = input.timeoutMs ?? 90_000;
-  const signal = input.signal
-    ? AbortSignal.any([input.signal, AbortSignal.timeout(perTry)])
-    : AbortSignal.timeout(perTry);
-  const res = await fetch("/api/bench/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      baseUrl: input.baseUrl,
-      apiKey: input.apiKey,
-      model: input.model,
-      messages: input.messages,
-      maxTokens: input.maxTokens,
-    }),
-    signal,
-  });
-
-  const ctype = res.headers.get("content-type") || "";
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err.slice(0, 400) || `HTTP ${res.status}`);
-  }
-
-  if (ctype.includes("application/json") && !ctype.includes("event-stream")) {
-    const body = (await res.json()) as Record<string, unknown>;
-    if (body.error) throw new Error(String(body.error));
-    const d = takeDelta(body);
-    input.onDelta?.({ content: d.content, reasoning: d.reasoning });
-    return { content: d.content, reasoning: d.reasoning, finish: d.finish };
-  }
-
-  if (!res.body) throw new Error("没有响应流");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let content = "";
-  let reasoning = "";
-  let finish = "";
-
+  const hardMs = input.timeoutMs ?? 600_000;
+  const idleMs = input.idleMs ?? 50_000;
+  const thinkHoldMs = input.thinkHoldMs ?? 180_000;
+  const idleCtrl = new AbortController();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const acc = { content: "", reasoning: "" };
+  const bumpIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    const wait = acc.content ? idleMs : thinkHoldMs;
+    idleTimer = setTimeout(() => idleCtrl.abort(), wait);
+  };
+  bumpIdle();
+  const parts = [AbortSignal.timeout(hardMs), idleCtrl.signal];
+  if (input.signal) parts.unshift(input.signal);
+  const signal = AbortSignal.any(parts);
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split(/\r?\n/);
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
-        try {
-          const obj = JSON.parse(data) as Record<string, unknown>;
-          const d = takeDelta(obj);
-          if (d.content) content += d.content;
-          if (d.reasoning) reasoning += d.reasoning;
-          if (d.finish) finish = d.finish;
-          input.onDelta?.({ content, reasoning });
-        } catch {
-          /* keep-alive */
+    const res = await fetch("/api/bench/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        model: input.model,
+        messages: input.messages,
+        maxTokens: input.maxTokens,
+        reasoningEffort: input.reasoningEffort,
+        apiStyle: input.apiStyle,
+      }),
+      signal,
+    });
+
+    const ctype = res.headers.get("content-type") || "";
+    if (!res.ok) {
+      const err = await res.text();
+      const slim = err.replace(/\s+/g, " ").slice(0, 300);
+      throw new Error(`HTTP ${res.status}: ${slim || res.statusText}`);
+    }
+
+    if (ctype.includes("application/json") && !ctype.includes("event-stream")) {
+      const body = (await res.json()) as Record<string, unknown>;
+      if (body.error) throw new Error(String(body.error));
+      const d = takeDelta(body);
+      input.onDelta?.({ content: d.content, reasoning: d.reasoning });
+      return { content: d.content, reasoning: d.reasoning, finish: d.finish };
+    }
+
+    if (!res.body) throw new Error("没有响应流");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let finish = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        bumpIdle();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const data = trimmed.slice(5).trim();
+          if (!data || data === "[DONE]") continue;
+          try {
+            const obj = JSON.parse(data) as Record<string, unknown>;
+            const d = takeDelta(obj);
+            if (d.content) acc.content += d.content;
+            if (d.reasoning) acc.reasoning += d.reasoning;
+            if (d.finish) finish = d.finish;
+            if (d.content || d.reasoning) bumpIdle();
+            input.onDelta?.({ content: acc.content, reasoning: acc.reasoning });
+          } catch {
+            /* keep-alive */
+          }
         }
       }
+    } catch (e) {
+      if (acc.content || acc.reasoning) {
+        return { content: acc.content, reasoning: acc.reasoning, finish: finish || "error" };
+      }
+      throw e;
     }
-  } catch (e) {
-    if (content || reasoning) {
-      return { content, reasoning, finish: finish || "error" };
-    }
-    throw e;
-  }
 
-  return { content, reasoning, finish };
+    return { content: acc.content, reasoning: acc.reasoning, finish };
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+  }
 }
 
 export async function streamChat(input: StreamChatInput) {

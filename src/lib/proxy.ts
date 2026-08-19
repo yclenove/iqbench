@@ -19,7 +19,7 @@ const TRAIL =
   /[-_.](xhigh|high|low|medium|mid|fast|slow|thinking|think|reasoning|reason|preview|latest|exp|experimental|beta|alpha|chat|instruct|turbo|search|online|tools?|vision|voice|realtime|mini|nano|pro|max|plus|lite|small|large|multi-agent|non|agent|\d+[kKmM]|20\d{2}-\d{2}-\d{2}|\d{8}|20\d{2}|\d{4})$/;
 
 export function modelFamily(id: string) {
-  let s = (id.split("/").pop() || id).toLowerCase();
+  let s = (id.split("/").pop() || id).toLowerCase().replace(/@(max|xhigh|high|medium|low|minimal|none)$/i, "");
   for (let i = 0; i < 10; i++) {
     const n = s.replace(TRAIL, "");
     if (n === s) break;
@@ -48,8 +48,17 @@ export function compareModels(a: { id: string; kind: string }, b: { id: string; 
   const ib = b.id.toLowerCase();
   if (ia === fa && ib !== fb) return -1;
   if (ib === fb && ia !== fa) return 1;
+  const ea = idEffort(a.id);
+  const eb = idEffort(b.id);
+  if (ea !== eb) return ea - eb;
   if (ia.length !== ib.length) return ia.length - ib.length;
   return ia.localeCompare(ib, undefined, { numeric: true });
+}
+
+function idEffort(id: string) {
+  const m = id.toLowerCase().match(/@(max|xhigh|high|medium|low|minimal|none)$/);
+  const order = ["max", "xhigh", "high", "medium", "low", "minimal", "none"];
+  return m ? order.indexOf(m[1]) : -1;
 }
 
 const creds = z.object({

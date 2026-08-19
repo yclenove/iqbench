@@ -47,17 +47,57 @@ export function cnToArabic(s: string) {
   });
 }
 
-export function extractFinal(text: string) {
-  if (!text) return "";
-  const matches = text.match(/(?:最终答案|答案)[:：]\s*(.+)/g);
-  let raw = "";
-  if (matches?.length) {
-    const last = matches[matches.length - 1]!;
-    raw = last.replace(/^(?:最终答案|答案)[:：]\s*/, "").trim();
-  } else {
-    raw = text.slice(-400);
+/** 渠道常把答案包在 Markdown 里：加粗、标题、引用、行内代码、HTML 标签。 */
+export function unwrapMarkdown(s: string) {
+  return (s || "")
+    .replace(/\r/g, "")
+    .replace(/```[\w-]*\n?/g, "")
+    .replace(/`+/g, "")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/<\/?(?:strong|b|em|i|p|br|span|div|code|pre|h[1-6]|blockquote)[^>]*>/gi, " ")
+    .replace(/</gi, "<")
+    .replace(/>/gi, ">")
+    .replace(/&/gi, "&")
+    .replace(/[ \t]+\n/g, "\n");
+}
+
+export function extractSlot(text: string): { found: boolean; line: string } {
+  const plain = unwrapMarkdown(text || "");
+  const lines = plain.split(/\n/);
+  let last = "";
+  let found = false;
+  const head =
+    /^(?:最终答案|最后答案|本题答案|final\s*answer)\s*[:：是为]?\s*(.*)$/i;
+  const alt = /^(?:答案)\s*[:：]\s*(.*)$/;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    const m = line.match(head) || line.match(alt);
+    if (!m) continue;
+    found = true;
+    let val = (m[1] || "").trim().replace(/^[\s*#:：-]+/, "").replace(/[*`]+$/g, "");
+    if (!val) val = (lines[i + 1] || "").trim();
+    last = val;
   }
-  return cnToArabic(raw.replace(/[：]/g, ":").trim());
+  if (!found) {
+    const loose = [
+      ...plain.matchAll(/(?:最终答案|最后答案|本题答案|final\s*answer)\s*[:：是为]\s*([^\n]+)/gi),
+    ];
+    if (loose.length) {
+      found = true;
+      last = loose[loose.length - 1]![1]!.trim();
+    }
+  }
+  const line = cnToArabic((found ? last : plain.slice(-800)).replace(/[：]/g, ":").trim());
+  return { found, line };
+}
+
+export function extractFinal(text: string) {
+  return extractSlot(text).line;
 }
 
 export function isolatedNumber(text: string, number: string) {
@@ -77,12 +117,26 @@ function negated(focus: string, key: string) {
   return new RegExp(`(?:不|非|不是|并非|绝不)${key}`).test(focus);
 }
 
+function dequote(s: string) {
+  return s
+    .replace(/[“”「」『』]/g, '"')
+    .replace(/"[^"]*"/g, " ")
+    .replace(/若[甲乙丙].{0,8}是骑士/g, " ");
+}
+
+function firstOf(s: string, set: string) {
+  const m = s.match(new RegExp(`[${set}]`));
+  return m?.[0] || "";
+}
+
 function namedScore(
   name: string,
   full: string,
   hint?: string,
 ): { ok: boolean; detail: string; memorized21?: boolean; partial?: number; tags?: string[] } {
-  const focus = extractFinal(full);
+  const slot = extractSlot(full);
+  const focus = slot.line;
+  const body = unwrapMarkdown(full);
   if (name === "sleep") {
     const blob = focus || full.slice(-400);
     const withhold =
@@ -104,10 +158,13 @@ function namedScore(
     return { ok, detail: ok ? "判定：开车去" : "未点明开车把车送去洗" };
   }
   if (name === "colorblind") {
-    const blob = focus + "\n" + full;
-    const color = /(色盲|红绿|伴X|X隐|性染色体|色弱)/.test(blob);
+    const blob = `${focus}\n${body || full}`;
+    const color =
+      /(色盲|红绿|伴X|X隐|性染色体|色弱|color\s*blind|colour\s*blind|red-?green|x-?linked)/i.test(
+        blob,
+      );
     const paternity =
-      /(不是亲生|并非亲生|不是他的亲生|不是生物学|非亲生|不是自己的孩子|不是自己女儿|不是他女儿|不是生父|不是生物学父亲|生物学上的父亲|不是其生父|非亲子|绿帽|出轨|不是他的种|不是自己骨肉|妻子外遇|不是他孩子)/.test(
+      /(不是亲生|并非亲生|不是他的亲生|不是生物学|非亲生|不是自己的孩子|不是自己女儿|不是他女儿|不是生父|不是生物学父亲|生物学上的父亲|不是其生父|非亲子|绿帽|出轨|不是他的种|不是自己骨肉|妻子外遇|不是他孩子|not (?:his|the) (?:biological )?(?:daughter|child|father)|affair|paternity|cuckold)/i.test(
         blob,
       );
     if (color && paternity) return { ok: true, detail: "串起色盲遗传与非亲生" };
@@ -116,19 +173,21 @@ function namedScore(
   }
   if (name === "anchor") {
     const down = /下降|降低|下去/.test(focus);
-    const reason = /(排水|浮力|体积|密度|重量排水|排开)/.test(focus + full);
+    const reason = /(排水|浮力|体积|密度|重量排水|排开)/.test(focus + "\n" + body);
     if (down && reason) return { ok: true, detail: "水位下降且理由正确" };
     if (down) return { ok: false, partial: 0.5, detail: "答下降但理由不足" };
     return { ok: false, detail: "未判定水位下降" };
   }
   if (name === "crt_money_classic") {
-    const ok = containsNumber(focus, 0.05) || /(?<!\d)5\s*分/.test(focus) || /五\s*分/.test(focus);
+    const blob = slot.found ? focus : body;
+    const ok = containsNumber(blob, 0.05) || /(?<!\d)5\s*分/.test(blob) || /五\s*分/.test(blob);
     return { ok, detail: ok ? "抗直觉：0.05" : "可能答成了 0.10" };
   }
   if (name === "crt_money_var") {
     const want = hint || "";
-    const ok = Boolean(want) && containsNumber(focus, want);
-    const classic = containsNumber(focus, 0.05);
+    const blob = slot.found ? focus : body;
+    const ok = Boolean(want) && containsNumber(blob, want);
+    const classic = containsNumber(blob, 0.05);
     return {
       ok,
       tags: !ok && classic ? ["背原题"] : undefined,
@@ -137,34 +196,43 @@ function namedScore(
   }
   if (name === "knights") {
     const win = (hint || "丙").trim() || "丙";
-    const letter: Record<string, string> = { 甲: "A", 乙: "B", 丙: "C" };
+    if (slot.found) {
+      const p = firstOf(focus, "甲乙丙");
+      return { ok: p === win, detail: p === win ? `骑士是${win}` : `槽写了${p || focus.slice(0, 12)}，应对${win}` };
+    }
+    const blob = dequote(body);
+    const head = blob.trim().split(/[\n。！？]/)[0] || "";
     const claims = (p: string) =>
-      (new RegExp(`(骑士是${p}|${p}是骑士|${p}为骑士|只有${p}|仅${p})`).test(focus) ||
-        new RegExp(`^[${p}${letter[p] || ""}]$`, "i").test(focus.trim())) &&
-      !negated(focus, p);
-    const negWin = new RegExp(`(?:不是|并非|非)${win}`).test(focus);
-    const winHit =
-      claims(win) || (new RegExp(`(?<![不非])是${win}`).test(focus) && !negWin);
+      new RegExp(`(骑士是${p}|${p}是骑士|${p}为骑士|只有${p}|仅${p})`).test(blob) && !negated(blob, p);
+    const headWin = new RegExp(`(骑士是${win}|${win}是骑士|^\\s*${win}\\s*$)`).test(head);
     const others = ["甲", "乙", "丙"].filter((p) => p !== win);
-    const ok = winHit && !negWin && others.every((p) => !claims(p));
+    const otherHead = others.some((p) => new RegExp(`${p}是骑士|骑士是${p}`).test(head));
+    const ok = (headWin || claims(win)) && !negated(blob, win) && !otherHead && others.every((p) => !claims(p));
     return { ok, detail: ok ? `骑士是${win}` : `未锁定${win}` };
   }
   if (name === "lineup") {
     const order = (hint || "戊丙丁甲乙").trim();
     const mid = order[2] || "丁";
-    const others = ["甲", "乙", "丙", "丁", "戊"].filter((p) => p !== mid).join("");
+    if (slot.found) {
+      const p = firstOf(focus, "甲乙丙丁戊");
+      return { ok: p === mid, detail: p === mid ? `中间是${mid}` : `槽写了${p || focus.slice(0, 12)}，应对${mid}` };
+    }
+    const others = ["甲", "乙", "丙", "丁", "戊"].filter((p) => p !== mid);
+    const blob = body;
     const midHit =
       new RegExp(
-        `(中间是${mid}|中间为${mid}|${mid}在中间|第\\s*3\\s*[位个]是${mid}|第\\s*3\\s*[位个]为${mid}|3\\s*号是${mid})`,
-      ).test(focus) ||
-      new RegExp(`^${mid}$`).test(focus.trim()) ||
-      new RegExp(order.split("").join("\\s*")).test(focus);
-    const otherMid = new RegExp(`(中间是[${others}]|第\\s*3\\s*[位个]是[${others}])`).test(focus);
+        `(中间.{0,12}是[:：*\\s]*${mid}|${mid}.{0,8}在中间|第\\s*3\\s*[位个号].{0,12}是[:：*\\s]*${mid}|站在中间.{0,16}${mid}|3\\s*号是${mid})`,
+      ).test(blob) ||
+      new RegExp(`^\\s*${mid}\\s*$`).test(blob.trim()) ||
+      new RegExp(order.split("").join("\\s*")).test(blob);
+    const otherMid = new RegExp(
+      `(中间.{0,12}是[:：*\\s]*[${others.join("")}]|第\\s*3\\s*[位个号].{0,12}是[:：*\\s]*[${others.join("")}])`,
+    ).test(blob);
     const ok = midHit && !otherMid;
     return { ok, detail: ok ? `中间是${mid}` : `未定位${mid}` };
   }
   if (name === "candy_var") {
-    const blob = focus || full.slice(-400);
+    const blob = slot.found ? focus : body;
     const hit17 =
       containsNumber(blob, 17) ||
       /十七/.test(blob) ||
@@ -180,8 +248,9 @@ function namedScore(
     return { ok: false, detail: "未命中 17" };
   }
   if (name === "candy_classic") {
-    if (containsNumber(focus, 21)) return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
-    if (containsNumber(focus, 29)) {
+    const blob = slot.found ? focus : body;
+    if (containsNumber(blob, 21)) return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
+    if (containsNumber(blob, 29)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "29 是盲取答案，半分" };
     }
     return { ok: false, detail: "未命中 21" };
@@ -196,10 +265,11 @@ function namedScore(
     } catch {
       /* ignore */
     }
-    if (ans && containsNumber(focus, ans)) {
+    const blob = slot.found ? focus : body;
+    if (ans && containsNumber(blob, ans)) {
       return { ok: true, detail: `按实际库存最坏情况算出 ${ans}` };
     }
-    if (naive && containsNumber(focus, naive)) {
+    if (naive && containsNumber(blob, naive)) {
       return {
         ok: false,
         partial: 0.5,
@@ -256,17 +326,67 @@ export function extractHtml(text: string) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${svg}</body></html>`;
 }
 
-export function gallerySrcDoc(html?: string, svg?: string) {
-  const art = (svg && /<svg/i.test(svg) ? svg : "") || extractSvg(html || "") || extractSvg(svg || "");
-  const css = `html,body{margin:0;width:100%;height:100%;background:#d9eefc;overflow:hidden}svg{width:100%;height:100%;display:block}`;
-  if (art) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${art}</body></html>`;
-  }
-  if (html && /<svg/i.test(html)) return html.replace(/<\/head>/i, `<style>${css}</style></head>`);
-  return "";
+function scrubPaint(s: string) {
+  return s
+    .replace(/<script\b[\s\S]*?<\/script>/gi, "")
+    .replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, "")
+    .replace(/<(?:iframe|object|embed|link)\b[\s\S]*?>/gi, "")
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript:/gi, "");
 }
 
-/** 正文被 length / 断流截断：有开标签没闭合。思考太长时各题都会中招。 */
+function withSvgNs(art: string) {
+  return /xmlns\s*=/i.test(art) ? art : art.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+
+/** 画廊内联用：全部 svg 图层 + 原 style。不要只抽第一张（经常是天空）。 */
+export function galleryPaint(html?: string, svg?: string) {
+  const blob = `${html || ""}\n${svg || ""}`;
+  if (isGatewayJunk(blob)) return "";
+  const styles = [...blob.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi)]
+    .map((m) => scrubPaint(m[0]))
+    .join("\n");
+  const all = [...blob.matchAll(/<svg\b[\s\S]*?<\/svg>/gi)].map((m) => scrubPaint(withSvgNs(m[0])));
+  const inner = all.length ? all.join("\n") : scrubPaint(withSvgNs(extractSvg(svg || "") || extractSvg(html || "")));
+  if (!inner) return "";
+  return `${styles}<div class="stage">${inner}</div>`;
+}
+
+export function fitGallerySvgs(root: ParentNode) {
+  root.querySelectorAll("svg").forEach((node) => {
+    const el = node as SVGSVGElement;
+    const wRaw = el.getAttribute("width");
+    const hRaw = el.getAttribute("height");
+    el.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    el.removeAttribute("width");
+    el.removeAttribute("height");
+    if (el.getAttribute("viewBox")) return;
+    try {
+      const b = el.getBBox();
+      if (b.width > 1 && b.height > 1) {
+        el.setAttribute("viewBox", `${b.x} ${b.y} ${b.width} ${b.height}`);
+        return;
+      }
+    } catch {
+      /* not laid out */
+    }
+    if (wRaw && hRaw && !/%/.test(wRaw) && !/%/.test(hRaw)) {
+      el.setAttribute("viewBox", `0 0 ${parseFloat(wRaw) || 400} ${parseFloat(hRaw) || 300}`);
+    } else {
+      el.setAttribute("viewBox", "0 0 400 300");
+    }
+  });
+}
+
+export function gallerySrcDoc(html?: string, svg?: string) {
+  const paint = galleryPaint(html, svg);
+  if (!paint) return "";
+  const css =
+    "html,body{margin:0;width:100%;height:100%;background:#d9eefc;overflow:hidden}.stage{position:relative;width:100%;height:100%}svg{position:absolute;inset:0;width:100%;height:100%;display:block}";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${paint}</body></html>`;
+}
+
+/** 正文被 length / 断流截断。不要把数学里的 < 或 LaTeX 花括号当成半截 HTML。 */
 export function looksTruncated(text: string, finishReason?: string) {
   if (finishReason === "length" || finishReason === "max_tokens" || finishReason === "error") return true;
   const s = (text || "").trim();
@@ -274,21 +394,23 @@ export function looksTruncated(text: string, finishReason?: string) {
   if (/<svg\b/i.test(s) && !/<\/svg>/i.test(s)) return true;
   if (/<!doctype html|<html[\s>]/i.test(s) && !/<\/html>/i.test(s)) return true;
   if (/<(?:path|g|polygon|polyline|style|script|div|body)\b[^>]*$/i.test(s)) return true;
-  if (/<[^>]*$/.test(s)) return true;
   const opens = (s.match(/\{/g) || []).length;
   const closes = (s.match(/\}/g) || []).length;
-  if (opens > closes && /\{/.test(s.slice(-400))) return true;
+  if (opens > closes + 2 && /\{[^{}]{0,40}$/.test(s)) return true;
   return false;
 }
 
-/** 思考被掐断时不要把半截思维链当答案。 */
+/** 正文被掐时用思维链；半截思考也比空答更接近真实水平。Q17 在调用方排除。 */
+export function looksLikeDraw(text: string) {
+  return /<svg\b|<!doctype html|<html[\s>]|id=["']wheel-front|id=["']pelican-body/i.test(text || "");
+}
+
 export function pickVisibleAnswer(content: string, reasoning: string, finish?: string) {
   const body = (content || "").trim();
   const thought = (reasoning || "").trim();
-  const cut = looksTruncated(body || thought, finish);
-  if (body) return { text: body, cut: looksTruncated(body, finish) };
-  if (cut) return { text: "", cut: true };
-  return { text: thought, cut: false };
+  if (body) return { text: body, cut: looksTruncated(body, finish), from: "body" as const };
+  if (thought) return { text: thought, cut: looksTruncated(thought, finish), from: "thought" as const };
+  return { text: "", cut: looksTruncated("", finish), from: "none" as const };
 }
 
 export function speedFactor(seconds: number, budget: number) {
@@ -830,8 +952,9 @@ function pickJson(content: string): { obj: Record<string, unknown> | null; extra
 
 function accuracyOf(judge: LiveJudge, item: Question, content: string) {
   if (judge.type === "isolated_number") {
-    const focus = extractFinal(content);
-    const ok = containsNumber(focus, judge.value);
+    const slot = extractSlot(content);
+    const blob = slot.found ? slot.line : unwrapMarkdown(content);
+    const ok = containsNumber(blob, judge.value);
     return {
       accuracy: ok ? item.score : 0,
       detail: ok ? `最终答案命中 ${judge.value}` : `不是 ${judge.value}`,

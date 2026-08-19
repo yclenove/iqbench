@@ -27,8 +27,12 @@ export function parentQid(id: string) {
 export function emptyFailTag(preview: string) {
   const p = preview || "";
   if (/已停止|AbortError/.test(p)) return "已停止";
-  const http = p.match(/HTTP\s*([1-5]\d\d)/i);
+  const http =
+    p.match(/HTTP\s*([1-5]\d\d)/i) ||
+    p.match(/"error"\s*:\s*"(?:HTTP\s*)?([1-5]\d\d)/i) ||
+    p.match(/\b(50[0-4])\s*:\s*Internal Server Error/i);
   if (http) return `HTTP ${http[1]}`;
+  if (/Internal Server Error/i.test(p)) return "HTTP 500";
   if (/Failed to fetch|fetch failed|NetworkError|ECONN|ETIMEDOUT|饱和|upstream/i.test(p)) return "网络失败";
   if (/超时|timeout/i.test(p)) return "超时";
   if (/截断|思考未完成/.test(p)) return "截断";
@@ -44,7 +48,7 @@ export function isRetryableFail(it: {
 }) {
   if (it.ok) return false;
   const blob = `${it.detail || ""} ${it.preview || ""} ${(it.tags || []).join(" ")}`;
-  return /超预算无产出|无产出|空答|已停止|截断|思考未完成|HTTP 408|HTTP 429|HTTP 5\d\d|Failed to fetch|fetch failed|超时|网络失败|网络|饱和|upstream|rate limit|Abort|网关|ECONN|ETIMEDOUT/i.test(
+  return /超预算无产出|无产出|空答|已停止|截断|思考未完成|HTTP\s*[1-5]\d\d|\b50[0-4]\b|Internal Server Error|Failed to fetch|fetch failed|超时|网络失败|网络|饱和|upstream|rate limit|Abort|网关|ECONN|ETIMEDOUT/i.test(
     blob,
   );
 }

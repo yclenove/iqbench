@@ -14,6 +14,7 @@ import { Route as BoardRouteImport } from './routes/board'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as StatusRouteImport } from './routes/status'
+import { Route as ApiModelSpecsRouteImport } from './routes/api/model-specs'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBenchChatRouteImport } from './routes/api/bench/chat'
 import { Route as ApiLinuxdoCallbackRouteImport } from './routes/api/linuxdo/callback'
@@ -43,6 +44,11 @@ const LoginRoute = LoginRouteImport.update({
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
   path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiModelSpecsRoute = ApiModelSpecsRouteImport.update({
+  id: '/api/model-specs',
+  path: '/api/model-specs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
+  '/api/model-specs': typeof ApiModelSpecsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
   '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
+  '/api/model-specs': typeof ApiModelSpecsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
   '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/status': typeof StatusRoute
+  '/api/model-specs': typeof ApiModelSpecsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bench/chat': typeof ApiBenchChatRoute
   '/api/linuxdo/callback': typeof ApiLinuxdoCallbackRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/login'
     | '/status'
+    | '/api/model-specs'
     | '/api/auth/$'
     | '/api/bench/chat'
     | '/api/linuxdo/callback'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/login'
     | '/status'
+    | '/api/model-specs'
     | '/api/auth/$'
     | '/api/bench/chat'
     | '/api/linuxdo/callback'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/login'
     | '/status'
+    | '/api/model-specs'
     | '/api/auth/$'
     | '/api/bench/chat'
     | '/api/linuxdo/callback'
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   GalleryRoute: typeof GalleryRoute
   LoginRoute: typeof LoginRoute
   StatusRoute: typeof StatusRoute
+  ApiModelSpecsRoute: typeof ApiModelSpecsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBenchChatRoute: typeof ApiBenchChatRoute
   ApiLinuxdoCallbackRoute: typeof ApiLinuxdoCallbackRoute
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/status'
       fullPath: '/status'
       preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/model-specs': {
+      id: '/api/model-specs'
+      path: '/api/model-specs'
+      fullPath: '/api/model-specs'
+      preLoaderRoute: typeof ApiModelSpecsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -241,6 +261,7 @@ const rootRouteChildren: RootRouteChildren = {
   GalleryRoute: GalleryRoute,
   LoginRoute: LoginRoute,
   StatusRoute: StatusRoute,
+  ApiModelSpecsRoute: ApiModelSpecsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBenchChatRoute: ApiBenchChatRoute,
   ApiLinuxdoCallbackRoute: ApiLinuxdoCallbackRoute,

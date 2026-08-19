@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>鸡你太美 · 鹈鹕骑自行车</title>
+  <style>
+    /*
+     * 设计说明：
+     * 1. 全部动画由 CSS keyframes 驱动，时间基准统一收敛到 --beat（一拍时长）与 --wheel（车轮一圈）。
+     *    切换速度时只改这两个变量，避免几十处 duration 散落各处、改一处漏一处。
+     * 2. 需要自转的元素一律采用「外层 g 负责定位 + 内层图形以 (0,0) 为中心 + transform-origin: 0 0」，
+     *    这样不依赖 transform-box: fill-box 的浏览器差异，Safari / Firefox 表现一致。
+     * 3. 尊重 prefers-reduced-motion：前庭敏感用户关闭全部动画，画面仍是一张完整静帧。
+     */
+    :root {
+      --beat: 0.46s;   /* 一拍 ≈ 130 BPM */
+      --wheel: 0.9s;   /* 车轮一圈 */
+      --ink: #f3e9ff;
+    }
+
+    /* 三档速度：由页面按钮切换 data-tempo，只覆盖节拍变量 */
+    :root[data-tempo="slow"] { --beat: 0.72s; --wheel: 1.5s; }
+    :root[data-tempo="fast"] { --beat: 0.30s; --wheel: 0.55s; }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 28px 16px;
+      background:
+        radial-gradient(900px 420px at 50% 0%, #3a1d63 0%, transparent 60%),
+        linear-gradient(180deg, #180b2c 0%, #0b0616 100%);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+      color: var(--ink);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-shadow: 0 0 18px rgba(255, 92, 240, 0.55);
+    }
+
+    .subtitle { margin: 0; font-size: 13px; color: #b8a6d6; letter-spacing: 0.06em; }
+
+    .stage {
+      width: min(980px, 100%);
+      border-radius: 26px;
+      overflow: hidden;
+      box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    }
+
+    svg { display: block; width: 100%; height: auto; }
+
+    .controls { display: flex; gap: 10px; }
+
+    .controls button {
+      padding: 7px 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      font-size: 13px;
+      font-family: inherit;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .controls button:hover { background: rgba(255, 255, 255, 0.14); }
+    .controls button[aria-pressed="true"] {
+      background: linear-gradient(180deg, #ff5cf0, #a24bff);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    /* ---------- 舞台环境 ---------- */
+    /* 聚光灯左右扫动，两束相位相反，制造舞台追光的交错感 */
+    .beam-l { animation: sweepL calc(var(--beat) * 8) ease-in-out infinite; transform-origin: 0 0; }
+    .beam-r { animation: sweepR calc(var(--beat) * 8) ease-in-out infinite; transform-origin: 0 0; }
+
+    /* LED 音柱：同一条 keyframes，用 delay 错开成波浪 */
+    .bar { animation: pump calc(var(--beat) * 2) ease-in-out infinite; transform-origin: 0 0; }
+
+    .glowdot { animation: twinkle calc(var(--beat) * 3) ease-in-out infinite; }
+    .stick { animation: wave calc(var(--beat) * 2) ease-in-out infinite; transform-origin: 0 0; }
+
+    /* ---------- 骑行主体 ---------- */
+    .spin { animation: spin var(--wheel) linear infinite; transform-origin: 0 0; }
+    /* 整体律动：两拍一个来回，带极轻微倾斜，避免纯上下显得僵硬 */
+    .groove { animation: groove calc(var(--beat) * 2) ease-in-out infinite; }
+    .head-bop { animation: headBop calc(var(--beat) * 2) ease-in-out infinite; transform-origin: 492px 128px; }
+    .arm-up { animation: armUp calc(var(--beat) * 4) ease-in-out infinite; transform-origin: 444px 170px; }
+    .ball-spin { animation: spin calc(var(--beat) * 1.5) linear infinite; transform-origin: 0 0; }
+    .pouch { animation: wobble calc(var(--beat) * 3) ease-in-out infinite; transform-origin: 505px 119px; }
+    .hair { animation: hairFlick calc(var(--beat) * 2) ease-in-out infinite; transform-origin: 508px 80px; }
+
+    /* ---------- 前景特效 ---------- */
+    .note { animation: floatUp calc(var(--beat) * 9) linear infinite; opacity: 0; }
+    .confetti { animation: fall calc(var(--beat) * 12) linear infinite; opacity: 0; }
+    .title-pulse { animation: titlePulse calc(var(--beat) * 4) ease-in-out infinite; transform-origin: 46px 96px; }
+    /* 四个标签轮流点亮，四拍一循环，正好对上「唱 跳 rap 篮球」 */
+    .tag { animation: tagFlash calc(var(--beat) * 4) steps(1, end) infinite; }
+    .bubble { animation: bubblePop calc(var(--beat) * 8) ease-in-out infinite; transform-origin: 800px 128px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes groove {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50%      { transform: translateY(-9px) rotate(-1.2deg); }
+    }
+    /* 头放大到 Q 版比例后，同样的角度看起来会晃得过猛，这里收窄摆幅 */
+    @keyframes headBop {
+      0%, 100% { transform: translateY(0) rotate(-2deg); }
+      50%      { transform: translateY(3px) rotate(2.5deg); }
+    }
+    @keyframes armUp {
+      0%, 100% { transform: rotate(-4deg) translateY(0); }
+      50%      { transform: rotate(6deg) translateY(-6px); }
+    }
+    @keyframes hairFlick {
+      0%, 100% { transform: rotate(-4deg); }
+      50%      { transform: rotate(3deg); }
+    }
+    @keyframes wobble {
+      0%, 100% { transform: rotate(-2.5deg); }
+      50%      { transform: rotate(3.5deg); }
+    }
+    @keyframes sweepL {
+      0%, 100% { transform: rotate(-11deg); }
+      50%      { transform: rotate(9deg); }
+    }
+    @keyframes sweepR {
+      0%, 100% { transform: rotate(10deg); }
+      50%      { transform: rotate(-10deg); }
+    }
+    @keyframes pump {
+      0%, 100% { transform: scaleY(0.35); }
+      50%      { transform: scaleY(1); }
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.25; }
+      50%      { opacity: 1; }
+    }
+    @keyframes wave {
+      0%, 100% { transform: rotate(-16deg); }
+      50%      { transform: rotate(16deg); }
+    }
+    @keyframes floatUp {
+      0%   { opacity: 0; transform: translate(0, 0) rotate(-8deg); }
+      12%  { opacity: 0.95; }
+      80%  { opacity: 0.7; }
+      100% { opacity: 0; transform: translate(46px, -230px) rotate(16deg); }
+    }
+    @keyframes fall {
+      0%   { opacity: 0; transform: translate(0, -40px) rotate(0deg); }
+      10%  { opacity: 1; }
+      85%  { opacity: 0.9; }
+      100% { opacity: 0; transform: translate(-70px, 520px) rotate(520deg); }
+    }
+    @keyframes titlePulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.045); }
+    }
+    /* steps(1) 让四个标签是「跳变点亮」而不是渐变，节奏感更强 */
+    @keyframes tagFlash {
+      0%, 25%  { opacity: 1; }
+      25.01%, 100% { opacity: 0.3; }
+    }
+    @keyframes bubblePop {
+      0%, 8%   { opacity: 0; transform: scale(0.6); }
+      14%      { opacity: 1; transform: scale(1.08); }
+      18%, 40% { opacity: 1; transform: scale(1); }
+      48%, 100%{ opacity: 0; transform: scale(0.9); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+      .note, .confetti, .bubble { opacity: 0.85; }
+    }
+  </style>
+</head>
+<body>
+  <h1>鸡 你 太 美</h1>
+
+  <div class="stage">
+    <svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ttl dsc">
+      <title id="ttl">鸡你大舞台，有胆你就来</title>
+      <desc id="dsc">紫色舞台聚光灯下，一只留着中分卷发、穿白衬衫黑背带的鹈鹕坐在自行车上，一只翅膀单手转着篮球，喉袋里还兜着一颗球，随节拍上下律动。</desc>
+
+      <defs>
+        <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#2a0f4d" />
+          <stop offset="55%"  stop-color="#421a6b" />
+          <stop offset="100%" stop-color="#180a2e" />
+        </linearGradient>
+        <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#3b1f5e" />
+          <stop offset="45%"  stop-color="#241141" />
+          <stop offset="100%" stop-color="#12081f" />
+        </linearGradient>
+        <linearGradient id="beamPink" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#ff7ef0" stop-opacity="0.85" />
+          <stop offset="100%" stop-color="#ff7ef0" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="beamCyan" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#66e6ff" stop-opacity="0.85" />
+          <stop offset="100%" stop-color="#66e6ff" stop-opacity="0" />
+        </linearGradient>
+        <linearGradient id="bodyFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#fffdf8" />
+          <stop offset="100%" stop-color="#e8ddf0" />
+        </linearGradient>
+        <linearGradient id="wingFill" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stop-color="#fbf7ff" />
+          <stop offset="72%"  stop-color="#ddd2ea" />
+          <stop offset="100%" stop-color="#4a3f5e" />
+        </linearGradient>
+        <linearGradient id="billFill" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#ffd35c" />
+          <stop offset="100%" stop-color="#f09318" />
+        </linearGradient>
+        <linearGradient id="pouchFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#ffb08a" />
+          <stop offset="100%" stop-color="#e0684f" />
+        </linearGradient>
+        <linearGradient id="frameFill" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stop-color="#00e0d1" />
+          <stop offset="100%" stop-color="#7b4bff" />
+        </linearGradient>
+        <linearGradient id="titleFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#fff6a8" />
+          <stop offset="55%"  stop-color="#ff7ae0" />
+          <stop offset="100%" stop-color="#8f5cff" />
+        </linearGradient>
+        <radialGradient id="ballFill" cx="35%" cy="30%" r="75%">
+          <stop offset="0%"   stop-color="#ffbe6b" />
+          <stop offset="60%"  stop-color="#f0821f" />
+          <stop offset="100%" stop-color="#c9530b" />
+        </radialGradient>
+        <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#fff" stop-opacity="0.5" />
+          <stop offset="100%" stop-color="#fff" stop-opacity="0" />
+        </linearGradient>
+
+        <!-- 灰格纹西裤的面料：两组疏密不同的格线叠出千鸟格那种细密质感 -->
+        <pattern id="checkPants" width="12" height="12" patternUnits="userSpaceOnUse">
+          <rect width="12" height="12" fill="#bdb8af" />
+          <path d="M0 0 H12 M0 6 H12 M0 0 V12 M6 0 V12" stroke="#a19b90" stroke-width="1.1" />
+          <path d="M0 3 H12 M3 0 V12" stroke="#d2cdc4" stroke-width="0.8" />
+        </pattern>
+
+        <filter id="neon" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="7" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="soft" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#0b0616" flood-opacity="0.45" />
+        </filter>
+        <filter id="blurRef" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3.5" />
+        </filter>
+
+        <!-- 地面倒影用的渐隐遮罩：越往下越淡 -->
+        <mask id="reflectMask">
+          <rect x="0" y="482" width="960" height="118" fill="url(#fade)" />
+        </mask>
+
+        <!-- 骑行主体定义一次，实体与倒影各引用一次，保证两者动作完全同步 -->
+        <g id="rider">
+          <!-- 后轮 -->
+          <g transform="translate(290 400)">
+            <g class="spin">
+              <circle r="70" fill="none" stroke="#241a3a" stroke-width="11" />
+              <circle r="70" fill="none" stroke="#7b4bff" stroke-width="2.5" opacity="0.9" />
+              <circle r="57" fill="none" stroke="#00e0d1" stroke-width="1.6" opacity="0.55" />
+              <g stroke="#8de9ff" stroke-width="2" opacity="0.75">
+                <line x1="0" y1="-57" x2="0" y2="57" />
+                <line x1="-57" y1="0" x2="57" y2="0" />
+                <line x1="-40" y1="-40" x2="40" y2="40" />
+                <line x1="40" y1="-40" x2="-40" y2="40" />
+                <line x1="-22" y1="-53" x2="22" y2="53" />
+                <line x1="53" y1="-22" x2="-53" y2="22" />
+              </g>
+              <circle r="9" fill="#ffd35c" stroke="#241a3a" stroke-width="3" />
+            </g>
+          </g>
+
+          <!-- 前轮 -->
+          <g transform="translate(620 400)">
+            <g class="spin">
+              <circle r="70" fill="none" stroke="#241a3a" stroke-width="11" />
+              <circle r="70" fill="none" stroke="#7b4bff" stroke-width="2.5" opacity="0.9" />
+              <circle r="57" fill="none" stroke="#00e0d1" stroke-width="1.6" opacity="0.55" />
+              <g stroke="#8de9ff" stroke-width="2" opacity="0.75">
+                <line x1="0" y1="-57" x2="0" y2="57" />
+                <line x1="-57" y1="0" x2="57" y2="0" />
+                <line x1="-40" y1="-40" x2="40" y2="40" />
+                <line x1="40" y1="-40" x2="-40" y2="40" />
+                <line x1="-22" y1="-53" x2="22" y2="53" />
+                <line x1="53" y1="-22" x2="-53" y2="22" />
+              </g>
+              <circle r="9" fill="#ffd35c" stroke="#241a3a" stroke-width="3" />
+            </g>
+          </g>
+
+          <!-- 车架 -->
+          <g fill="none" stroke="url(#frameFill)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M290 400 L 430 400" />
+            <path d="M290 400 L 352 286" />
+            <path d="M352 278 L 430 400" />
+            <path d="M430 400 L 562 278" />
+            <path d="M360 292 L 552 284" />
+            <path d="M620 400 L 562 268" />
+          </g>
+          <path d="M430 416 C 500 430 560 418 610 400" fill="none" stroke="#8de9ff" stroke-width="3" stroke-dasharray="5 4" opacity="0.8" />
+          <circle cx="430" cy="400" r="16" fill="#241a3a" />
+          <circle cx="430" cy="400" r="9" fill="#ffd35c" />
+
+          <!-- 曲柄与脚踏：固定在骑行姿势，蹼足踩实 -->
+          <g>
+            <line x1="430" y1="400" x2="478" y2="418" stroke="#241a3a" stroke-width="7" stroke-linecap="round" />
+            <line x1="430" y1="400" x2="386" y2="378" stroke="#241a3a" stroke-width="7" stroke-linecap="round" />
+            <rect x="470" y="412" width="28" height="11" rx="3" fill="#ffd35c" stroke="#241a3a" stroke-width="2" />
+            <rect x="362" y="372" width="28" height="11" rx="3" fill="#ffd35c" stroke="#241a3a" stroke-width="2" />
+          </g>
+
+          <!-- 车座 -->
+          <ellipse cx="348" cy="268" rx="34" ry="11" fill="#1c1430" />
+          <path d="M318 266 Q 348 252 382 266" fill="#2f2350" />
+
+          <!-- 车把 -->
+          <path d="M562 268 L 562 248" stroke="#241a3a" stroke-width="8" stroke-linecap="round" />
+          <path d="M530 246 C 548 232 580 228 608 244" fill="none" stroke="#241a3a" stroke-width="8" stroke-linecap="round" />
+          <path d="M530 246 C 524 250 522 258 528 262" fill="none" stroke="#ff4d9d" stroke-width="9" stroke-linecap="round" />
+          <path d="M608 244 C 616 248 618 256 612 262" fill="none" stroke="#ff4d9d" stroke-width="9" stroke-linecap="round" />
+
+          <!--
+            ===== 鹈鹕本鹈：拟人化坐姿 =====
+            鸟原本的水平体态无论怎么描都撑不起衣服，衬衫背带只会读成「白鸟身上绑了带子」，
+            所以整体改成人一样坐在车座上：竖直躯干撑白衬衫与背带裤，翅膀当两条手臂
+            （一只扶把、一只举球），鹈鹕特征全部保留在大喙、喉袋、蹼足和 S 形脖子上。
+          -->
+          <g class="groove" filter="url(#soft)">
+            <!-- 尾羽：扇形一片，比拆成两片三角更像鸟尾，也不会读成白箭头 -->
+            <path d="M354 248 C 328 244 304 253 288 272 C 300 285 322 289 344 282 C 353 276 357 261 354 248 Z"
+                  fill="#f7f2fb" stroke="#cec3de" stroke-width="2" />
+            <g fill="none" stroke="#cec3de" stroke-width="1.8" stroke-linecap="round">
+              <path d="M348 254 C 330 257 314 265 300 276" />
+              <path d="M347 268 C 333 271 319 277 307 283" />
+            </g>
+
+            <!-- 远侧腿：先画，让它压在躯干之后；整条压深表示在后 -->
+            <g>
+              <path d="M362 256 L 430 322" fill="none" stroke="url(#checkPants)" stroke-width="32" stroke-linecap="round" />
+              <path d="M430 322 L 393 361" fill="none" stroke="url(#checkPants)" stroke-width="21" stroke-linecap="round" />
+              <g opacity="0.3" stroke="#241f2e" fill="none" stroke-linecap="round">
+                <path d="M362 256 L 430 322" stroke-width="32" />
+                <path d="M430 322 L 393 361" stroke-width="21" />
+              </g>
+              <!-- 露踝：裤脚到踝上方，留一截鹈鹕自己的腿 -->
+              <path d="M393 361 L 387 367" fill="none" stroke="#c9822a" stroke-width="15" stroke-linecap="round" />
+              <path d="M368 358 C 363 366 363 372 366 378 L 392 378 C 396 374 394 367 388 363 L 380 355 Z"
+                    fill="#17161e" stroke="#2f2c3a" stroke-width="2" />
+            </g>
+
+            <!-- 举球的手臂（远侧）+ 指尖旋转的篮球 -->
+            <g class="arm-up">
+              <path d="M444 170 C 428 152 414 130 406 108" fill="none" stroke="#3a3746" stroke-width="30" stroke-linecap="round" />
+              <path d="M444 170 C 428 152 414 130 406 108" fill="none" stroke="#1b1a24" stroke-width="26" stroke-linecap="round" />
+              <!-- 毛衣袖口 -->
+              <path d="M411 136 L 433 148" fill="none" stroke="#474357" stroke-width="2.8" stroke-linecap="round" />
+              <!-- 翼尖当手，托住球 -->
+              <path d="M394 112 C 388 100 394 88 406 88 C 418 88 424 100 416 112 C 409 118 400 118 394 112 Z"
+                    fill="url(#wingFill)" stroke="#b9abd0" stroke-width="2" />
+              <!-- 球自身以 (0,0) 为中心，便于原地自转 -->
+              <g transform="translate(406 74)">
+                <g class="ball-spin">
+                  <circle r="26" fill="url(#ballFill)" stroke="#8a3707" stroke-width="2.5" />
+                  <g fill="none" stroke="#7d3206" stroke-width="2.4" stroke-linecap="round">
+                    <line x1="0" y1="-26" x2="0" y2="26" />
+                    <line x1="-26" y1="0" x2="26" y2="0" />
+                    <path d="M-8 -24.8 C -18 -12, -18 12, -8 24.8" />
+                    <path d="M8 -24.8 C 18 -12, 18 12, 8 24.8" />
+                  </g>
+                  <ellipse cx="-9" cy="-11" rx="7.5" ry="4.5" fill="#fff" opacity="0.28" transform="rotate(-30 -9 -11)" />
+                </g>
+              </g>
+            </g>
+
+            <!-- 躯干：黑色高领毛衣。倾斜的胶囊，下端落在车座上，上端就是肩 -->
+            <ellipse cx="405" cy="210" rx="42" ry="68" transform="rotate(38 405 210)"
+                     fill="#1b1a24" stroke="#3a3746" stroke-width="2" />
+            <!-- 针织竖纹，顺着躯干轴向走 -->
+            <g fill="none" stroke="#2c2a38" stroke-width="2.2" stroke-linecap="round">
+              <path d="M424 160 C 408 180 394 200 382 216" />
+              <path d="M438 176 C 422 196 408 214 396 230" />
+              <path d="M450 194 C 436 212 422 228 412 240" />
+            </g>
+
+            <!-- 灰格纹西裤：臀腿一体，格纹用 pattern 铺 -->
+            <ellipse cx="380" cy="246" rx="42" ry="34" transform="rotate(38 380 246)"
+                     fill="url(#checkPants)" stroke="#928c82" stroke-width="2" />
+
+            <!--
+              米白背带：参考造型里背带是压在黑毛衣外面的两条浅色带子 + 腰口皮扣，
+              不是黑色围兜，所以这里只留带子与扣件。
+            -->
+            <g fill="none" stroke-linecap="butt">
+              <path d="M404 252 C 414 226 428 196 438 172 C 444 158 452 148 460 146" stroke="#e5ddc5" stroke-width="12" />
+              <path d="M378 236 C 388 210 400 182 410 162 C 416 150 424 142 432 140" stroke="#d8cfb4" stroke-width="11" />
+            </g>
+            <g fill="none" stroke="#bfb192" stroke-width="1.4" opacity="0.9">
+              <path d="M410 254 C 420 228 434 198 444 174" />
+              <path d="M384 238 C 394 212 406 184 416 164" />
+            </g>
+            <!-- 腰口皮扣 -->
+            <g fill="#8a5a2b" stroke="#5f3c19" stroke-width="1.5">
+              <rect x="397" y="243" width="15" height="12" rx="2.5" transform="rotate(38 404 249)" />
+              <rect x="371" y="227" width="14" height="11" rx="2.5" transform="rotate(38 378 232)" />
+            </g>
+
+            <!-- 脖子：鹈鹕的 S 形，只是立起来了 -->
+            <path d="M446 166 C 452 140 470 122 494 116" fill="none" stroke="#d9cee9" stroke-width="30" stroke-linecap="round" />
+            <path d="M446 166 C 452 140 470 122 494 116" fill="none" stroke="#fffdf8" stroke-width="26" stroke-linecap="round" />
+            <!-- 毛衣高领：套住脖子下段，翻折边压一道亮线 -->
+            <path d="M442 174 C 448 154 456 141 468 132" fill="none" stroke="#3a3746" stroke-width="35" stroke-linecap="round" />
+            <path d="M442 174 C 448 154 456 141 468 132" fill="none" stroke="#1b1a24" stroke-width="31" stroke-linecap="round" />
+            <!-- 领口画成一圈翻折环，否则高领会和毛衣糊成一块黑 -->
+            <ellipse cx="466" cy="142" rx="19" ry="7" transform="rotate(44 466 142)"
+                     fill="none" stroke="#4e4a63" stroke-width="3.5" />
+            <!-- 银色项链：挂在高领外面 -->
+            <path d="M448 170 C 458 192 476 196 486 176" fill="none" stroke="#cfd6e4" stroke-width="2.4" />
+            <rect x="460" y="188" width="9" height="15" rx="2.5" transform="rotate(12 464 195)"
+                  fill="#e8edf7" stroke="#a3abbd" stroke-width="1.3" />
+
+            <!-- 头部（含中分卷发、耳环、喙、喉袋）：以脖子接点为中心放大到 Q 版头身比，再按节拍点头 -->
+            <g transform="translate(494 124) scale(1.12) translate(-494 -124)">
+            <g class="head-bop">
+              <ellipse cx="505" cy="100" rx="38" ry="34" fill="#fffdf8" stroke="#d9cee9" stroke-width="2" />
+
+              <!--
+                中分卷发：脸改成 3/4 朝向后，左右两片可以真的从头顶正中分开，
+                中间留一条露头皮的缝——纯侧脸时这条缝是画不出来的。
+                波浪做在发块自身的轮廓上，额外加小尖角会读成犄角。
+              -->
+              <g class="hair">
+                <!-- 参考造型是蓬松短发，发梢收在耳朵高度，垂到脸颊下方会变成蘑菇头 -->
+                <path d="M505 60 C 488 55 472 62 464 76 C 457 85 454 98 457 108
+                         C 460 116 466 120 472 120 C 475 108 481 94 492 80
+                         C 497 72 503 65 505 60 Z" fill="#a89c90" stroke="#8b7f73" stroke-width="1.6" />
+                <path d="M512 60 C 528 56 542 64 550 78 C 555 87 557 97 555 105
+                         C 553 113 548 117 543 117 C 540 104 532 92 520 80
+                         C 516 73 513 65 512 60 Z" fill="#a89c90" stroke="#8b7f73" stroke-width="1.6" />
+                <!-- 分缝走深色（头皮阴影），发色变浅后浅色缝反而看不出来 -->
+                <path d="M508 62 C 507 70 506 76 507 82" fill="none" stroke="#6e6259" stroke-width="3" stroke-linecap="round" />
+                <g fill="none" stroke="#8b7f73" stroke-width="2" stroke-linecap="round" opacity="0.9">
+                  <path d="M497 76 C 488 88 481 100 478 114" />
+                  <path d="M517 76 C 526 87 533 98 537 110" />
+                </g>
+                <g fill="none" stroke="#c6bcb1" stroke-width="2" stroke-linecap="round" opacity="0.9">
+                  <path d="M487 73 C 478 84 472 95 469 106" />
+                  <path d="M528 71 C 537 80 543 90 547 100" />
+                </g>
+              </g>
+
+              <!-- 两只眼睛：3/4 视角下两只都能看到，比单眼侧脸拟人得多 -->
+              <g>
+                <circle cx="524" cy="92" r="7.4" fill="#1a1226" />
+                <circle cx="526.5" cy="89.5" r="2.6" fill="#fff" />
+                <circle cx="492" cy="95" r="6.4" fill="#1a1226" />
+                <circle cx="494" cy="92.5" r="2.2" fill="#fff" />
+              </g>
+              <ellipse cx="482" cy="112" rx="8" ry="4.5" fill="#ff7ac0" opacity="0.5" />
+
+              <!-- 耳环：挂在发梢下方才不会被头发吃掉，用银色和项链呼应 -->
+              <g stroke="#cfd6e4" stroke-width="2" fill="none">
+                <line x1="469" y1="118" x2="469" y2="122" />
+                <circle cx="469" cy="127" r="5" />
+              </g>
+
+              <!-- 喉袋：里面兜着一颗篮球 -->
+              <g class="pouch">
+                <path d="M532 112 C 548 138 570 176 610 182 C 648 188 668 162 660 138 C 652 118 626 114 532 112 Z"
+                      fill="url(#pouchFill)" stroke="#c25a42" stroke-width="2" />
+                <path d="M546 130 C 574 146 612 152 648 142" fill="none" stroke="#ffd9c2" stroke-width="3" opacity="0.65" />
+                <g transform="translate(602 150)">
+                  <circle r="17" fill="url(#ballFill)" stroke="#8a3707" stroke-width="2" />
+                  <g fill="none" stroke="#7d3206" stroke-width="1.8" stroke-linecap="round">
+                    <line x1="0" y1="-17" x2="0" y2="17" />
+                    <line x1="-17" y1="0" x2="17" y2="0" />
+                    <path d="M-5.5 -16 C -12 -8, -12 8, -5.5 16" />
+                    <path d="M5.5 -16 C 12 -8, 12 8, 5.5 16" />
+                  </g>
+                </g>
+              </g>
+
+              <!-- 上喙：从脸的前缘长出，喙根压在脸中央会把眼睛整个吃掉 -->
+              <path d="M524 99 C 566 89 630 93 674 105 C 681 112 673 120 648 118 C 606 114 558 111 524 107 Z"
+                    fill="url(#billFill)" stroke="#d0820e" stroke-width="2" />
+              <path d="M640 104 L 674 106" stroke="#b8690c" stroke-width="3" stroke-linecap="round" />
+              <ellipse cx="548" cy="103" rx="6.5" ry="3.6" fill="#e0684f" opacity="0.5" />
+            </g>
+            </g>
+
+            <!-- 扶车把的手臂（近侧）：黑毛衣袖，画在最前，保证不被喉袋吞掉 -->
+            <path d="M462 174 C 500 188 532 214 554 240" fill="none" stroke="#3a3746" stroke-width="30" stroke-linecap="round" />
+            <path d="M462 174 C 500 188 532 214 554 240" fill="none" stroke="#1b1a24" stroke-width="26" stroke-linecap="round" />
+            <path d="M534 210 L 518 230" fill="none" stroke="#474357" stroke-width="2.8" stroke-linecap="round" />
+            <ellipse cx="556" cy="242" rx="15" ry="12" transform="rotate(36 556 242)"
+                     fill="url(#wingFill)" stroke="#b9abd0" stroke-width="2" />
+
+            <!-- 近侧腿：格纹长裤到踝，露一截腿再接黑短靴 -->
+            <path d="M380 264 L 458 330" fill="none" stroke="url(#checkPants)" stroke-width="36" stroke-linecap="round" />
+            <path d="M458 330 L 479 393" fill="none" stroke="url(#checkPants)" stroke-width="23" stroke-linecap="round" />
+            <path d="M479 393 L 482 401" fill="none" stroke="#ffb03a" stroke-width="16" stroke-linecap="round" />
+            <path d="M472 398 C 467 406 467 412 470 418 L 502 418 C 506 414 504 405 497 401 L 487 393 Z"
+                  fill="#1b1a24" stroke="#3a3746" stroke-width="2" />
+          </g>
+        </g>
+      </defs>
+
+      <!-- ===== 背景：夜色舞台 ===== -->
+      <rect width="960" height="600" fill="url(#night)" />
+
+      <!-- 顶部灯架 -->
+      <rect x="0" y="0" width="960" height="26" fill="#100a1e" />
+      <g fill="#2a1d45">
+        <rect x="60"  y="26" width="26" height="16" rx="4" />
+        <rect x="300" y="26" width="26" height="16" rx="4" />
+        <rect x="640" y="26" width="26" height="16" rx="4" />
+        <rect x="880" y="26" width="26" height="16" rx="4" />
+      </g>
+      <g class="glowdot" fill="#ffe27a">
+        <circle cx="73"  cy="44" r="5" />
+        <circle cx="653" cy="44" r="5" />
+      </g>
+      <g class="glowdot" fill="#66e6ff" style="animation-delay: -0.6s">
+        <circle cx="313" cy="44" r="5" />
+        <circle cx="893" cy="44" r="5" />
+      </g>
+
+      <!-- LED 音柱：贴着地平线向上生长 -->
+      <g opacity="0.55">
+        <g class="bar" transform="translate(20 440)"><rect x="0" y="-82" width="24" height="82" fill="#ff5cf0" /></g>
+        <g class="bar" transform="translate(60 440)" style="animation-delay: -0.12s"><rect x="0" y="-112" width="24" height="112" fill="#a24bff" /></g>
+        <g class="bar" transform="translate(100 440)" style="animation-delay: -0.24s"><rect x="0" y="-68" width="24" height="68" fill="#66e6ff" /></g>
+        <g class="bar" transform="translate(140 440)" style="animation-delay: -0.36s"><rect x="0" y="-126" width="24" height="126" fill="#ff5cf0" /></g>
+        <g class="bar" transform="translate(180 440)" style="animation-delay: -0.48s"><rect x="0" y="-90" width="24" height="90" fill="#a24bff" /></g>
+        <g class="bar" transform="translate(740 440)" style="animation-delay: -0.30s"><rect x="0" y="-97" width="24" height="97" fill="#66e6ff" /></g>
+        <g class="bar" transform="translate(780 440)" style="animation-delay: -0.18s"><rect x="0" y="-122" width="24" height="122" fill="#ff5cf0" /></g>
+        <g class="bar" transform="translate(820 440)" style="animation-delay: -0.42s"><rect x="0" y="-75" width="24" height="75" fill="#a24bff" /></g>
+        <g class="bar" transform="translate(860 440)" style="animation-delay: -0.06s"><rect x="0" y="-108" width="24" height="108" fill="#66e6ff" /></g>
+        <g class="bar" transform="translate(900 440)" style="animation-delay: -0.54s"><rect x="0" y="-86" width="24" height="86" fill="#ff5cf0" /></g>
+      </g>
+
+      <!-- 观众席剪影与荧光棒 -->
+      <g fill="#100a20">
+        <rect x="0" y="424" width="960" height="26" />
+        <!-- 暗场观众只保留剪影，不加描边：描一圈边会变成一排圆环，反而失真 -->
+        <g>
+          <ellipse cx="30"  cy="424" rx="16" ry="14" /><ellipse cx="78"  cy="428" rx="14" ry="12" />
+          <ellipse cx="126" cy="422" rx="17" ry="15" /><ellipse cx="176" cy="428" rx="14" ry="12" />
+          <ellipse cx="226" cy="424" rx="16" ry="14" /><ellipse cx="276" cy="428" rx="14" ry="12" />
+          <ellipse cx="330" cy="423" rx="16" ry="14" /><ellipse cx="382" cy="428" rx="14" ry="12" />
+          <ellipse cx="436" cy="424" rx="16" ry="14" /><ellipse cx="490" cy="428" rx="14" ry="12" />
+          <ellipse cx="544" cy="423" rx="16" ry="14" /><ellipse cx="596" cy="428" rx="14" ry="12" />
+          <ellipse cx="650" cy="424" rx="16" ry="14" /><ellipse cx="702" cy="428" rx="14" ry="12" />
+          <ellipse cx="756" cy="423" rx="16" ry="14" /><ellipse cx="808" cy="428" rx="14" ry="12" />
+          <ellipse cx="862" cy="424" rx="16" ry="14" /><ellipse cx="916" cy="428" rx="14" ry="12" />
+        </g>
+      </g>
+      <g stroke-linecap="round" stroke-width="5">
+        <g class="stick" transform="translate(56 424)"><line x1="0" y1="0" x2="0" y2="-30" stroke="#7dff9c" /></g>
+        <g class="stick" transform="translate(152 424)" style="animation-delay: -0.2s"><line x1="0" y1="0" x2="0" y2="-34" stroke="#ff8ae0" /></g>
+        <g class="stick" transform="translate(252 424)" style="animation-delay: -0.4s"><line x1="0" y1="0" x2="0" y2="-28" stroke="#8de9ff" /></g>
+        <g class="stick" transform="translate(406 424)" style="animation-delay: -0.1s"><line x1="0" y1="0" x2="0" y2="-32" stroke="#ffe27a" /></g>
+        <g class="stick" transform="translate(514 424)" style="animation-delay: -0.5s"><line x1="0" y1="0" x2="0" y2="-30" stroke="#7dff9c" /></g>
+        <g class="stick" transform="translate(624 424)" style="animation-delay: -0.3s"><line x1="0" y1="0" x2="0" y2="-34" stroke="#ff8ae0" /></g>
+        <g class="stick" transform="translate(730 424)" style="animation-delay: -0.15s"><line x1="0" y1="0" x2="0" y2="-28" stroke="#8de9ff" /></g>
+        <g class="stick" transform="translate(884 424)" style="animation-delay: -0.45s"><line x1="0" y1="0" x2="0" y2="-32" stroke="#ffe27a" /></g>
+      </g>
+
+      <!-- 舞台地板与球场线 -->
+      <rect x="0" y="448" width="960" height="152" fill="url(#floor)" />
+      <path d="M0 452 H 960" stroke="#7b4bff" stroke-width="3" opacity="0.8" />
+      <g fill="none" stroke="#efe6ff" stroke-width="3" opacity="0.28">
+        <path d="M120 600 C 210 520 330 476 480 476 C 630 476 750 520 840 600" />
+        <path d="M480 476 V 600" />
+      </g>
+
+      <!-- 追光：screen 混合让光锥叠在地板上而不糊住主体轮廓 -->
+      <g style="mix-blend-mode: screen">
+        <g class="beam-l" transform="translate(313 40)">
+          <polygon points="0,0 -150,560 130,560" fill="url(#beamCyan)" opacity="0.42" />
+        </g>
+        <g class="beam-r" transform="translate(653 40)">
+          <polygon points="0,0 -130,560 150,560" fill="url(#beamPink)" opacity="0.72" />
+        </g>
+      </g>
+
+      <!-- 地面倒影：与实体共用 #rider，动作天然同步 -->
+      <g mask="url(#reflectMask)" opacity="0.55" filter="url(#blurRef)">
+        <use href="#rider" transform="translate(20 671.6) scale(1 -0.4)" />
+      </g>
+      <ellipse cx="330" cy="484" rx="96" ry="12" fill="#0b0616" opacity="0.45" />
+      <ellipse cx="660" cy="484" rx="96" ry="12" fill="#0b0616" opacity="0.45" />
+
+      <!-- ===== 主体 ===== -->
+      <use href="#rider" transform="translate(20 8)" />
+
+      <!-- 场边应援的小鸡：谐音梗的另一半 -->
+      <g transform="translate(96 520)">
+        <g class="groove" style="animation-delay: -0.23s">
+          <ellipse cx="0" cy="0" rx="26" ry="24" fill="#ffe27a" stroke="#e0a91a" stroke-width="2" />
+          <ellipse cx="0" cy="-22" rx="17" ry="15" fill="#fff0a8" stroke="#e0a91a" stroke-width="2" />
+          <path d="M-6 -36 C -2 -46 6 -44 6 -36 Z" fill="#ff6b6b" />
+          <circle cx="5" cy="-24" r="2.6" fill="#3a2a10" />
+          <polygon points="16,-22 27,-19 16,-15" fill="#ff9f1c" />
+          <path d="M-22 4 C -34 -2 -36 8 -26 12" fill="#ffd35c" />
+          <line x1="-9" y1="22" x2="-11" y2="34" stroke="#ff9f1c" stroke-width="3" />
+          <line x1="9"  y1="22" x2="11"  y2="34" stroke="#ff9f1c" stroke-width="3" />
+          <!-- 应援牌 -->
+          <g transform="translate(30 -34) rotate(-12)">
+            <rect x="0" y="0" width="94" height="34" rx="7" fill="#ff5cf0" stroke="#fff" stroke-width="2" />
+            <text x="47" y="23" text-anchor="middle" font-size="15" font-weight="700" fill="#fff"
+                  font-family="'PingFang SC','Hiragino Sans GB','Noto Sans SC',sans-serif">只因你太美</text>
+          </g>
+        </g>
+      </g>
+
+      <!-- 飘散的音符与彩带 -->
+      <g font-family="'PingFang SC',sans-serif" font-size="30" fill="#ffe27a" filter="url(#neon)">
+        <text class="note" x="150" y="404">♪</text>
+        <text class="note" x="216" y="432" style="animation-delay: -1.4s" fill="#8de9ff">♫</text>
+        <text class="note" x="812" y="404" style="animation-delay: -2.6s" fill="#ff8ae0">♪</text>
+        <text class="note" x="880" y="372" style="animation-delay: -3.4s" fill="#7dff9c">♬</text>
+      </g>
+      <g>
+        <rect class="confetti" x="180" y="30" width="9" height="15" rx="2" fill="#ff5cf0" />
+        <rect class="confetti" x="380" y="30" width="9" height="15" rx="2" fill="#66e6ff" style="animation-delay: -1.9s" />
+        <rect class="confetti" x="560" y="30" width="9" height="15" rx="2" fill="#ffe27a" style="animation-delay: -3.3s" />
+        <rect class="confetti" x="740" y="30" width="9" height="15" rx="2" fill="#7dff9c" style="animation-delay: -4.6s" />
+        <rect class="confetti" x="860" y="30" width="9" height="15" rx="2" fill="#a24bff" style="animation-delay: -2.5s" />
+      </g>
+
+      <!-- 台词气泡 -->
+      <g class="bubble">
+        <path d="M762 62 H 932 A 12 12 0 0 1 944 74 V 116 A 12 12 0 0 1 932 128 H 800 L 772 150 L 780 128 H 762 A 12 12 0 0 1 750 116 V 74 A 12 12 0 0 1 762 62 Z"
+              fill="#fffdf8" stroke="#ff5cf0" stroke-width="3" />
+        <text x="847" y="104" text-anchor="middle" font-size="26" font-weight="800" fill="#7b1fa2"
+              font-family="'PingFang SC','Hiragino Sans GB','Noto Sans SC',sans-serif">你干嘛～哎哟</text>
+      </g>
+
+      <!-- 标题：靠左排版，给中间的骑行主体和右上的气泡让出空间 -->
+      <g class="title-pulse" filter="url(#neon)"
+         font-family="'PingFang SC','Hiragino Sans GB','Noto Sans SC',sans-serif"
+         fill="url(#titleFill)" stroke="#2a0f4d" stroke-width="2">
+        <text x="46" y="96" font-size="44" font-weight="900" letter-spacing="4">鸡你大舞台</text>
+        <text x="46" y="148" font-size="36" font-weight="800" letter-spacing="6">有胆你就来</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="controls" role="group" aria-label="节奏速度">
+    <button type="button" data-tempo="slow">慢速</button>
+    <button type="button" data-tempo="normal" aria-pressed="true">原速</button>
+    <button type="button" data-tempo="fast">加速</button>
+  </div>
+
+  <script>
+    // 节奏切换：只改根元素的 data-tempo，由 CSS 变量统一驱动全部动画时长，
+    // 避免用 JS 去逐个修改动画属性造成状态分散、难维护。
+    (function () {
+      var root = document.documentElement;
+      var buttons = Array.prototype.slice.call(document.querySelectorAll('.controls button'));
+
+      root.setAttribute('data-tempo', 'normal');
+
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var tempo = btn.getAttribute('data-tempo');
+          root.setAttribute('data-tempo', tempo);
+          buttons.forEach(function (other) {
+            other.setAttribute('aria-pressed', String(other === btn));
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

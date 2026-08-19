@@ -38,6 +38,8 @@ export type Question = {
   prompt?: string;
   /** 覆盖全局系统提示（用于与「最终答案行」要求冲突的格式题）。 */
   system?: string;
+  /** 答案槽取值说明，会拼进题干。画图/JSON 题不要填。 */
+  slotHint?: string;
   judge: Judge;
   instantiate?: (rng: () => number) => Instantiated;
 };
@@ -46,9 +48,9 @@ export type Dimension = { id: string; name: string; weight: number; why: string 
 
 export const QUESTIONS = {
   system:
-    "你是严谨的推理者。禁止使用外部工具、搜索或执行代码。必须自己逐步推理。\n全文最后单独一行写：最终答案: <尽量短的结论，不要在这一行解释>",
+    "你是严谨的推理者。禁止使用外部工具、搜索或执行代码。必须自己逐步推理。\n全文最后单独一行写答案槽：最终答案: <短结论>\n允许 Markdown（加粗、标题、列表、行内代码），判分会去掉标记只看槽里的字。不要在这一行解释。",
   compactSystem:
-    "你是严谨的推理者。禁止工具。本通道有超时。必须先输出一行：最终答案: <短结论>\n然后再写不超过 8 行依据。不要先长篇再给答案。",
+    "你是严谨的推理者。禁止工具。本通道有超时。必须先输出一行：最终答案: <短结论>\n允许加粗或标题包裹这一行。然后再写不超过 8 行依据。",
   drawCompact:
     "只输出完整 HTML 文档。从 <!DOCTYPE html> 起，到 </html> 止。不要思考过程，不要解释，不要 markdown。SVG 必须写完并闭合。",
   dimensions: [
@@ -74,6 +76,7 @@ export const QUESTIONS = {
       expect: "不叫醒 / 不喂药",
       prompt:
         "病房里病人已经睡着了。医嘱写着：睡前口服安眠药 1 片。值班护士此刻站在床边，药还没发。护士应该怎么做？给出明确行动结论。",
+      slotHint: "不叫醒 或 叫醒喂药",
       judge: { type: "named", name: "sleep" },
     },
     {
@@ -85,6 +88,7 @@ export const QUESTIONS = {
       expect: "开车去",
       prompt:
         "周末小周要把自己的轿车洗干净。最近的洗车店在 4 公里外。他现在人在家里，车停在楼下。他应该如何前往洗车店？一句话。",
+      slotHint: "开车 或 步行/公交等",
       judge: { type: "named", name: "wash" },
     },
     {
@@ -95,6 +99,7 @@ export const QUESTIONS = {
       timeBudget: 45,
       expect: "0.05 元",
       prompt: "一个球拍和一个球一共 1.10 元。球拍比球贵 1 元。球多少钱？只给球的价格。",
+      slotHint: "数字，单位元",
       judge: { type: "named", name: "crt_money_classic" },
     },
     {
@@ -106,6 +111,7 @@ export const QUESTIONS = {
       expect: "色盲遗传 + 非亲生",
       prompt:
         "有一天，一个女孩参加数学考试只得了 38 分。她心里对父亲的惩罚充满恐惧，于是偷偷把分数改成了 88 分。她的父亲看到试卷后，怒发冲冠，狠狠地给了她一巴掌，怒吼道：“你这 8 怎么一半是绿的一半是红的，你以为我是傻子吗？”女孩被打后，委屈地哭了起来，什么也没说。\n\n过了一会儿，父亲突然崩溃了。\n\n问题：父亲崩溃的原因是什么？请给出最能同时解释「改分方式」「一半红一半绿」和「随后崩溃」的推理链。",
+      slotHint: "一句话结论",
       judge: { type: "named", name: "colorblind" },
     },
     {
@@ -117,6 +123,7 @@ export const QUESTIONS = {
       expect: "水位下降（重量排水 > 体积排水）",
       prompt:
         "一条小船漂在游泳池里，船上放着一只铁锚。把铁锚从船上拿起来扔进池底。池子水位上升、下降还是不变？说明理由。",
+      slotHint: "下降 / 上升 / 不变",
       judge: { type: "named", name: "anchor" },
     },
     {
@@ -128,6 +135,7 @@ export const QUESTIONS = {
       expect: "21（29 为盲取半分）",
       prompt:
         "三种口味糖果，各有圆形和五角星形。手感可辨形状、不能辨口味。事先决定圆形取几个、五角星取几个。数量：圆形 苹果7 桃子9 西瓜8；五角星 苹果7 桃子6 西瓜4。最坏情况下仍保证：（圆形苹果且五角星桃子）或（圆形桃子且五角星苹果）。圆形+五角星的最少总数是多少？",
+      slotHint: "一个整数",
       judge: { type: "named", name: "candy_classic" },
     },
     {
@@ -138,6 +146,7 @@ export const QUESTIONS = {
       timeBudget: 120,
       expect: "由求解器给出",
       parametric: true,
+      slotHint: "一个整数（只写要摸的只数）",
       judge: { type: "named", name: "socks" },
       instantiate: (rng) => {
         const g = genSocks(rng);
@@ -163,6 +172,7 @@ export const QUESTIONS = {
       expect: "17（25 半分；21 疑似套用）",
       prompt:
         "规则同「按形状决定个数、保证跨形状苹果桃子配对」。数量换成：圆形 苹果5 桃子8 西瓜6；五角星 苹果4 桃子3 西瓜5。最少总数是多少？必须按本题数字重算。",
+      slotHint: "一个整数",
       judge: { type: "named", name: "candy_var" },
     },
     {
@@ -173,6 +183,7 @@ export const QUESTIONS = {
       timeBudget: 45,
       expect: "由求解器给出",
       parametric: true,
+      slotHint: "数字，单位元",
       judge: { type: "named", name: "crt_money_var" },
       instantiate: (rng) => {
         const g = genBat(rng);
@@ -196,6 +207,7 @@ export const QUESTIONS = {
       timeBudget: 45,
       expect: "第 7 项",
       parametric: true,
+      slotHint: "第7项的数字",
       judge: { type: "isolated_number", value: "0" },
       instantiate: (rng) => {
         const g = genSeq(rng);
@@ -215,6 +227,7 @@ export const QUESTIONS = {
       timeBudget: 45,
       expect: "凯撒位移后的词",
       parametric: true,
+      slotHint: "一个英文单词",
       judge: { type: "named", name: "analogy" },
       instantiate: (rng) => {
         const g = genAnalogy(rng);
@@ -234,6 +247,7 @@ export const QUESTIONS = {
       timeBudget: 60,
       expect: "由求解器给出",
       parametric: true,
+      slotHint: "甲 / 乙 / 丙",
       judge: { type: "named", name: "knights" },
       instantiate: (rng) => {
         const g = genKnights(rng);
@@ -253,6 +267,7 @@ export const QUESTIONS = {
       timeBudget: 60,
       expect: "由求解器给出",
       parametric: true,
+      slotHint: "甲 / 乙 / 丙 / 丁 / 戊",
       judge: { type: "named", name: "lineup" },
       instantiate: (rng) => {
         const g = genLineup(rng);
@@ -272,6 +287,7 @@ export const QUESTIONS = {
       timeBudget: 45,
       expect: "由求解器给出",
       parametric: true,
+      slotHint: "小时数（数字）",
       judge: { type: "isolated_number", value: "0" },
       instantiate: (rng) => {
         const g = genPipes(rng);
@@ -291,6 +307,7 @@ export const QUESTIONS = {
       timeBudget: 20,
       expect: "由求解器计数",
       parametric: true,
+      slotHint: "一个整数",
       judge: { type: "isolated_number", value: "0" },
       instantiate: (rng) => {
         const g = genCount(rng);
@@ -378,10 +395,18 @@ export function iqIndex(weightedRatio: number) {
   return Math.round(100 + 90 * (Math.max(0, Math.min(1, weightedRatio)) - 0.5));
 }
 
+function appendSlot(prompt: string, hint?: string) {
+  if (!hint) return prompt;
+  return `${prompt}\n\n最后单独一行写答案槽（允许 **加粗**、# 标题、\`代码\`，不要在这一行解释）：\n最终答案: <${hint}>`;
+}
+
 export function instantiateQuestion(q: Question, seed: number): Instantiated {
-  if (q.instantiate) return q.instantiate(mulberry32(seed));
+  if (q.instantiate) {
+    const inst = q.instantiate(mulberry32(seed));
+    return { ...inst, prompt: appendSlot(inst.prompt, q.slotHint) };
+  }
   return {
-    prompt: q.prompt || "",
+    prompt: appendSlot(q.prompt || "", q.slotHint),
     judge: q.judge,
     label: q.title,
     expect: q.expect,
