@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { QUESTIONS } from "@/lib/questions";
-import type { PublicChannelRow, PublicDimRow, PublicModelRow, PublicPairRow } from "@/lib/bench-db";
+import type { PublicChannelRow, PublicDimRow, PublicModelRow, PublicPairRow, PublicUserRow } from "@/lib/bench-db";
 
 const headCell = "border-b border-border pb-2 pr-3 text-left font-medium";
 const cell = "py-2.5 pr-3 align-top";
@@ -358,6 +358,52 @@ export function PublicPairBoard({
             })}
           </div>
         </>
+      )}
+    </CardShell>
+  );
+}
+
+export function PublicUserTable({ rows }: { rows: PublicUserRow[] }) {
+  return (
+    <CardShell
+      title="测评员榜"
+      hint="按登录用户聚合中位 IQ。只显示公开昵称，不上报邮箱和 Key。游客不上此榜。"
+      empty="还没有登录用户上榜"
+    >
+      {rows.length === 0 ? null : (
+        <div className="-mx-1 overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
+            <thead>
+              <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
+                <th className={headCell}>#</th>
+                <th className={headCell}>测评员</th>
+                <th className={headCell}>中位</th>
+                <th className={headCell}>巅峰</th>
+                <th className={headCell}>代表模型</th>
+                <th className={headCell}>模型 / 场次</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.name}-${i}`} className="border-b border-border/50 last:border-0 hover:bg-surface-2/40">
+                  <td className={`${cell} font-mono text-primary`}>{i + 1}</td>
+                  <td className={`${cell} font-medium`}>{r.name}</td>
+                  <td className={`${cell} tabular-nums`}>
+                    <span className="font-serif text-lg font-bold text-primary">{r.med_iq}</span>
+                  </td>
+                  <td className={`${cell} tabular-nums text-muted`}>{r.best_iq}</td>
+                  <td className={`${cell} max-w-[10rem] truncate text-xs`} title={r.top_model}>
+                    {r.top_model}
+                  </td>
+                  <td className={`${cell} tabular-nums`}>
+                    {r.models}
+                    <span className="text-faint"> / {r.runs}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </CardShell>
   );

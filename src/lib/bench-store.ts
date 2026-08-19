@@ -14,6 +14,7 @@ export type ItemSnap = {
   seconds: number;
   detail: string;
   memorized21?: boolean;
+  tags?: string[];
   svg?: string;
   html?: string;
   craft?: SvgCraft;
@@ -182,6 +183,7 @@ export function compactResults(
           seconds: number;
           detail: string;
           memorized21?: boolean;
+          tags?: string[];
           svg?: string;
           html?: string;
           craft?: SvgCraft;
@@ -209,6 +211,7 @@ export function compactResults(
           accuracy: it.accuracy ?? it.score,
           speedFactor: it.speedFactor ?? 1,
           memorized21: Boolean(it.memorized21),
+          tags: it.tags,
           seconds: it.seconds,
           detail: (it.detail || "").slice(0, 240),
           svg: (it.svg || "").slice(0, 80000) || undefined,
@@ -224,12 +227,12 @@ export function makeRun(
   baseUrl: string,
   key: string,
   results: Parameters<typeof compactResults>[0],
-  opts?: { hostPublic?: boolean },
+  opts?: { hostPublic?: boolean; id?: string },
 ): BenchRun {
   const raw = hostOf(baseUrl);
   const hostPublic = Boolean(opts?.hostPublic);
   return {
-    id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: opts?.id || `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
     host: publishHost(raw, hostPublic),
     hostPublic,

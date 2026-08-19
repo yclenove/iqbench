@@ -47,6 +47,22 @@ export const Route = createRootRoute({
         <AuthProvider>
           <Outlet />
         </AuthProvider>
+        <footer className="border-t border-border/70">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-muted sm:px-6">
+            <span>猛蹬·145</span>
+            <p>
+              友情链接
+              <a
+                href="https://linux.do"
+                target="_blank"
+                rel="noreferrer"
+                className="ml-2 text-fg underline decoration-primary/50 underline-offset-2 transition-colors hover:text-primary"
+              >
+                LINUX DO
+              </a>
+            </p>
+          </div>
+        </footer>
         <Scripts />
       </body>
     </html>

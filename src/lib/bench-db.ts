@@ -113,6 +113,15 @@ export type PublicPairRow = {
   avg_seconds: number;
 };
 
+export type PublicUserRow = {
+  name: string;
+  med_iq: number;
+  best_iq: number;
+  top_model: string;
+  runs: number;
+  models: number;
+};
+
 export type PublicDimRow = {
   dim: string;
   model: string;
@@ -310,6 +319,45 @@ async function queryDims(sql: Sql): Promise<PublicDimRow[]> {
   }
 }
 
+async function queryUsers(sql: Sql): Promise<PublicUserRow[]> {
+  try {
+    const rows = await sql.query(
+      `with agg as (
+          select user_id,
+                 round(percentile_cont(0.5) within group (order by iq))::int as med_iq,
+                 max(iq)::int as best_iq,
+                 count(*)::int as runs,
+                 count(distinct model)::int as models
+          from bench_public_scores
+          group by user_id
+        ),
+        top as (
+          select distinct on (user_id) user_id, model as top_model
+          from bench_public_scores
+          order by user_id, iq desc
+        )
+        select coalesce(nullif(btrim(u."name"), ''), '匿名') as name,
+               a.med_iq, a.best_iq, a.runs, a.models,
+               coalesce(t.top_model, '—') as top_model
+        from agg a
+        left join top t on t.user_id = a.user_id
+        left join "user" u on u.id = a.user_id
+        order by a.med_iq desc, a.best_iq desc, a.runs desc
+        limit 50`,
+    );
+    return rows.map((r) => ({
+      name: String(r.name ?? "匿名"),
+      med_iq: Math.round(num(r.med_iq)),
+      best_iq: Math.round(num(r.best_iq)),
+      top_model: String(r.top_model ?? "—"),
+      runs: Math.round(num(r.runs)),
+      models: Math.round(num(r.models)),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export const publicModelBoard = createServerFn({ method: "GET" }).handler(async () =>
   queryModels(await getSql()),
 );
@@ -328,13 +376,14 @@ export const publicDimBoard = createServerFn({ method: "GET" }).handler(async ()
 
 export const publicBoardPack = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await getSql();
-  const [models, channels, pairs, dims] = await Promise.all([
+  const [models, channels, pairs, dims, users] = await Promise.all([
     queryModels(sql),
     queryChannels(sql),
     queryPairs(sql),
     queryDims(sql),
+    queryUsers(sql),
   ]);
-  return { models, channels, pairs, dims };
+  return { models, channels, pairs, dims, users };
 });
 
 export const deleteCloudRun = createServerFn({ method: "POST" })

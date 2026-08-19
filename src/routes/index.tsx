@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronDown,
   Download,
   FileText,
   Loader2,
@@ -34,6 +33,18 @@ import {
   type Baseline,
   type BenchRun,
 } from "@/lib/bench-store";
+import {
+  clearDraft,
+  draftSummary,
+  emptyFailTag,
+  loadDraft,
+  missingJobs,
+  retryableJobs,
+  runGaps,
+  writeDraft,
+  type BenchDraft,
+  type Job,
+} from "@/lib/bench-draft";
 import { listCloudRuns, modelBaselines, saveCloudRun } from "@/lib/bench-db";
 import { BenchArchive } from "@/components/bench-archive";
 import { patchLive } from "@/lib/live-bench";
@@ -121,6 +132,7 @@ function Home() {
   const [hostPublic, setHostPublic] = useState(false);
   const [models, setModels] = useState<ModelOpt[]>([]);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [modelQuery, setModelQuery] = useState("");
   const [status, setStatus] = useState("就绪");
   const [log, setLog] = useState("");
   const [running, setRunning] = useState(false);
@@ -131,8 +143,12 @@ function Home() {
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [histTick, setHistTick] = useState(0);
   const [viewing, setViewing] = useState<BenchRun | null>(null);
+  const [draft, setDraft] = useState<BenchDraft | null>(null);
+  const draftIdRef = useRef("");
   const logEl = useRef<HTMLPreElement>(null);
   const { user } = useCurrentUserState();
+  const userRef = useRef(user);
+  userRef.current = user;
   const cfgReady = useRef(false);
   const prevScope = useRef("");
 
@@ -146,7 +162,7 @@ function Home() {
         hostPublic?: boolean;
       };
       if (c.base) setBaseUrl(c.base);
-      if (c.workers) setWorkers(Math.min(4, Math.max(1, c.workers)));
+      if (c.workers) setWorkers(Math.min(8, Math.max(1, c.workers)));
       if (typeof c.probe === "boolean") setProbeOn(c.probe);
       if (typeof c.hostPublic === "boolean") setHostPublic(c.hostPublic);
       const sessionKey = sessionStorage.getItem("iqbench_key");
@@ -172,6 +188,7 @@ function Home() {
     } catch {
       /* ignore */
     }
+    setDraft(loadDraft());
   }, []);
 
   useEffect(() => {
@@ -195,10 +212,21 @@ function Home() {
   useEffect(() => {
     if (!user) return;
     withRetry(() => listCloudRuns())
-      .then((cloud) => {
+      .then(async (cloud) => {
         cloud.forEach((r) => {
           if (r?.id && r.models) saveRun(r);
         });
+        const have = new Set(cloud.map((r) => r.id));
+        const pending = loadRuns()
+          .filter((r) => r.id && !have.has(r.id) && runGaps(r).miss.length === 0)
+          .slice(0, 8);
+        for (const r of pending) {
+          try {
+            await saveCloudRun({ data: r });
+          } catch {
+            /* 过期场次或未登录 */
+          }
+        }
         setHistTick((n) => n + 1);
       })
       .catch(() => {
@@ -226,6 +254,11 @@ function Home() {
   };
 
   const selected = models.filter((m) => picked[m.id]).map((m) => m.id);
+  const visibleModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase();
+    if (!q) return models;
+    return models.filter((m) => m.id.toLowerCase().includes(q) || m.kind.toLowerCase().includes(q));
+  }, [models, modelQuery]);
 
   async function fetchModels() {
     saveCfg();
@@ -256,27 +289,150 @@ function Home() {
     setPicked(next);
   }
 
-  async function run() {
-    if (!selected.length) {
-      append("先拉模型并至少选一个");
-      setStatus("先拉模型并至少选一个");
+  function pickVisible(on: boolean) {
+    setPicked((p) => {
+      const next = { ...p };
+      visibleModels.forEach((m) => {
+        next[m.id] = on;
+      });
+      return next;
+    });
+  }
+
+  function invertVisible() {
+    setPicked((p) => {
+      const next = { ...p };
+      visibleModels.forEach((m) => {
+        next[m.id] = !p[m.id];
+      });
+      return next;
+    });
+  }
+
+  function snapDraft(modelIds: string[], nextResults: Record<string, ModelResult>) {
+    const id = draftIdRef.current || `draft_${Date.now()}`;
+    draftIdRef.current = id;
+    writeDraft({
+      id,
+      createdAt: draft?.id === id ? draft.createdAt : new Date().toISOString(),
+      host: hostOf(baseUrl),
+      keyFp: keyFp(apiKey),
+      workers,
+      probeOn,
+      hostPublic,
+      models: modelIds,
+      results: nextResults,
+    });
+    setDraft(loadDraft());
+  }
+
+  async function run(opts?: { resume?: boolean; retryFailed?: boolean; fromRun?: BenchRun }) {
+    let modelIds = selected;
+    let nextResults: Record<string, ModelResult> = {};
+    let jobList: Job[] = [];
+    const nWorkers = Math.min(8, Math.max(1, workers));
+
+    if (opts?.fromRun) {
+      if (opts.fromRun.benchVer !== 7) {
+        append("题库版本已换，这场不能续，请新开测评");
+        return;
+      }
+      nextResults = mapRun(opts.fromRun);
+      modelIds = opts.fromRun.models.map((m) => m.id);
+      draftIdRef.current = opts.fromRun.id;
+      jobList = opts.retryFailed ? retryableJobs(nextResults, modelIds) : missingJobs(nextResults, modelIds);
+      if (!jobList.length && opts.retryFailed) {
+        append("没有可重试的网络失败题");
+        return;
+      }
+      if (!jobList.length) jobList = retryableJobs(nextResults, modelIds);
+    } else if (opts?.resume && draft) {
+      if (draft.benchVer !== 7) {
+        append("题库版本已换，草稿作废");
+        clearDraft();
+        setDraft(null);
+        return;
+      }
+      if (apiKey && keyFp(apiKey) !== draft.keyFp) {
+        append("当前 Key 和草稿不是同一把，请填回原来的 Key 再续");
+        setStatus("Key 对不上，无法续测");
+        return;
+      }
+      if (!apiKey) {
+        append("续测需要再填一次 Key");
+        setStatus("先填 Key 再续测");
+        return;
+      }
+      nextResults = mapRun({
+        id: draft.id,
+        createdAt: draft.createdAt,
+        host: draft.host,
+        keyFp: draft.keyFp,
+        keyHint: "",
+        benchVer: draft.benchVer,
+        maxScore: MAX_SCORE,
+        models: draft.results,
+      });
+      modelIds = draft.models;
+      draftIdRef.current = draft.id;
+      jobList = missingJobs(nextResults, modelIds);
+      if (!jobList.length) jobList = retryableJobs(nextResults, modelIds);
+    } else if (opts?.retryFailed) {
+      nextResults = { ...results };
+      modelIds = Object.keys(nextResults);
+      jobList = retryableJobs(nextResults, modelIds);
+      if (!jobList.length) {
+        append("没有可重试的网络失败题（判错的不算）");
+        return;
+      }
+    } else {
+      if (!selected.length) {
+        append("先拉模型并至少选一个");
+        setStatus("先拉模型并至少选一个");
+        return;
+      }
+      modelIds = selected;
+      for (const model of modelIds) {
+        nextResults[model] = { items: {}, total: 0, max: MAX_SCORE, seconds: 0, iq: 70 };
+      }
+      jobList = modelIds.flatMap((model) => QUESTIONS.items.map((q) => ({ model, qid: q.id })));
+      draftIdRef.current = `draft_${Date.now()}`;
+    }
+
+    if (!apiKey || !baseUrl) {
+      append("先填 API 地址和 Key");
       return;
     }
+
+    const jobs = jobList
+      .map((j) => ({ model: j.model, q: QUESTIONS.items.find((q) => q.id === j.qid) }))
+      .filter((j): j is { model: string; q: (typeof QUESTIONS.items)[number] } => Boolean(j.q));
+
+    if (!jobs.length && !(probeOn && !opts?.retryFailed)) {
+      append("没有待跑的题");
+      return;
+    }
+
     saveCfg();
     stopRef.current = false;
     setViewing(null);
+    setPicked((prev) => {
+      const next = { ...prev };
+      for (const id of modelIds) next[id] = true;
+      return next;
+    });
+    if (models.length === 0) {
+      setModels(modelIds.map((id) => ({ id, kind: "chat" })));
+    }
     setRunning(true);
     patchLive({ running: true });
-    setStatus(`测评中 · ${workers} 路并行`);
+    setStatus(`测评中 · ${nWorkers} 路并行`);
     setLiveJobs({});
-    const nextResults: Record<string, ModelResult> = {};
-    for (const model of selected) {
-      nextResults[model] = { items: {}, total: 0, max: MAX_SCORE, seconds: 0, iq: 70 };
-    }
     setResults({ ...nextResults });
-
-    const jobs = selected.flatMap((model) => QUESTIONS.items.map((q) => ({ model, q })));
-    append(`共 ${jobs.length} 题，${workers} 路并行 · bench v7`);
+    snapDraft(modelIds, nextResults);
+    append(
+      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : ""}，${nWorkers} 路并行 · bench v7`,
+    );
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -292,6 +448,7 @@ function Home() {
         const inst = instantiateQuestion(q, seed);
         const tag = `${model}/${q.id}`;
         append(`→ ${tag} ${q.title}${q.parametric ? ` [${inst.label}]` : ""}`);
+        setLiveJobs((prev) => ({ ...prev, [tag]: "连接中…" }));
         const t0 = performance.now();
         let content = "";
         let preview = "";
@@ -345,9 +502,10 @@ function Home() {
           }
         }
         const dt = (performance.now() - t0) / 1000;
+        const failTag = emptyFailTag(preview);
         const judged = content
           ? judgeItem(q, content, dt, inst.judge)
-          : { ok: false, score: 0, accuracy: 0, speedFactor: 0, detail: preview, tags: ["超预算无产出"] };
+          : { ok: false, score: 0, accuracy: 0, speedFactor: 0, detail: preview || failTag, tags: [failTag] };
         const write = (id: string, j: typeof judged, more?: Partial<ItemResult>) => {
           bucket.items[id] = {
             ok: j.ok,
@@ -400,6 +558,7 @@ function Home() {
         bucket.iqHi = ci.hi;
         bucket.equalRate = iq.equalRate;
         setResults({ ...nextResults });
+        snapDraft(modelIds, nextResults);
         setLiveJobs((prev) => {
           const copy = { ...prev };
           delete copy[tag];
@@ -411,16 +570,20 @@ function Home() {
       }
     }
 
-    await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, () => worker()));
+    await Promise.all(Array.from({ length: Math.min(nWorkers, jobs.length) }, () => worker()));
 
-    if (probeOn && !stopRef.current) {
+    const skipProbe = Boolean(opts?.retryFailed);
+    if (probeOn && !stopRef.current && !skipProbe) {
       setStatus("渠道鉴定中…");
       append(`渠道鉴定（不计分）：知识阶梯 ${KNOWLEDGE_LADDER.length} 问 + juice + 身份自报`);
       const age = ladderAgeDays();
       if (age > 90) {
         append(`  ⚠ 知识阶梯最新条目距今 ${age} 天，联网探测已失效，建议在 src/lib/probes.ts 补新事件`);
       }
-      const probeModels = [...selected];
+      const probeModels = modelIds.filter((m) => !nextResults[m]?.probe);
+      if (!probeModels.length) {
+        /* already probed */
+      } else {
       let probeCursor = 0;
       // 探针都是琐碎回忆题，单题限时，防止推理型渠道无限磨
       const PROBE_TIMEOUT_MS = 90_000;
@@ -453,6 +616,7 @@ function Home() {
           probeCursor += 1;
           if (!model) break;
           const tag = `${model}/鉴定`;
+          setLiveJobs((prev) => ({ ...prev, [tag]: "鉴定中…" }));
           const rows: ProbeRow[] = [];
           for (const p of KNOWLEDGE_LADDER) {
             if (stopRef.current) break;
@@ -474,14 +638,15 @@ function Home() {
       }
 
       await Promise.all(
-        Array.from({ length: Math.min(workers, probeModels.length) }, () => probeWorker()),
+        Array.from({ length: Math.min(nWorkers, probeModels.length) }, () => probeWorker()),
       );
+      }
     }
 
     // 降智对照：跟全网同名模型的历史分布比（先比后传，本次成绩不掺进基线）
     if (!stopRef.current) {
       try {
-        const base = await withRetry(() => modelBaselines({ data: selected }), 2);
+        const base = await withRetry(() => modelBaselines({ data: modelIds }), 2);
         for (const b of base) {
           const bucket = nextResults[b.model];
           if (!bucket || b.runs < 3) continue;
@@ -496,20 +661,34 @@ function Home() {
       }
     }
 
+    const leftover = missingJobs(nextResults, modelIds);
     if (Object.keys(nextResults).length) {
-      const finished = makeRun(baseUrl, apiKey, nextResults, { hostPublic });
+      const finished = makeRun(baseUrl, apiKey, nextResults, {
+        hostPublic,
+        id: draftIdRef.current || undefined,
+      });
       saveRun(finished);
       setHistTick((n) => n + 1);
-      if (user) {
-        withRetry(() => saveCloudRun({ data: finished })).catch(() => {
-          /* 游客不同步 */
-        });
+      if (leftover.length || stopRef.current) {
+        snapDraft(modelIds, nextResults);
+        append(`未完成，已存草稿（还剩 ${leftover.length} 题）。刷新后可续测。`);
+      } else {
+        clearDraft();
+        setDraft(null);
+        draftIdRef.current = "";
+        if (userRef.current) {
+          withRetry(() => saveCloudRun({ data: finished }))
+            .then(() => append("已写入公开榜"))
+            .catch((err) => append(`公开榜同步失败：${err instanceof Error ? err.message : "未知错误"}`));
+        } else {
+          append("未登录，本场只留本机。登录（L站 / Google / X）后才会上公开榜");
+        }
       }
     }
     setLiveJobs({});
     setRunning(false);
     patchLive({ running: false });
-    setStatus(stopRef.current ? "已停止" : "完成");
+    setStatus(stopRef.current || leftover.length ? "未完成，可续测" : "完成");
     append("全部结束");
   }
 
@@ -585,7 +764,7 @@ function Home() {
             <p className="kicker">Leaderboard</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight">榜单</h1>
             <p className="mt-1 text-sm text-muted">
-              模型看中位，渠道看相对增益，同模跨渠拆开网关水分。点模型名进对照。
+              模型看中位，渠道看相对增益，测评员看登录用户贡献。游客只留本机；L站 / Google / X 登录后才进公开榜。
             </p>
           </div>
           <BenchArchive
@@ -593,11 +772,43 @@ function Home() {
             refresh={histTick}
             onChanged={() => setHistTick((n) => n + 1)}
             onOpen={openArchiveRun}
+            onResume={(hist, mode) => void run({ fromRun: hist, retryFailed: mode === "retry" })}
           />
         </div>
       ) : (
 
       <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-16 sm:px-6">
+        {draft && !running ? (
+          <div className="mt-2 flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm sm:flex-row sm:items-center">
+            <p className="min-w-0 flex-1">
+              有一场未完成
+              {(() => {
+                const s = draftSummary(draft);
+                return `（${s.n} 个模型，还剩 ${s.miss} 题${s.retry ? `，${s.retry} 题可重试` : ""}）`;
+              })()}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg"
+                onClick={() => void run({ resume: true })}
+              >
+                继续
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted"
+                onClick={() => {
+                  clearDraft();
+                  setDraft(null);
+                  append("已丢弃草稿");
+                }}
+              >
+                丢弃
+              </button>
+            </div>
+          </div>
+        ) : null}
         {fresh ? (
           <section className="card mt-2 px-6 py-12 text-center sm:py-16">
             <img src="/favicon.svg" alt="" className="mx-auto size-16 rounded-2xl" />
@@ -674,20 +885,21 @@ function Home() {
             </label>
             <label className="inline-flex items-center gap-2">
               <span className="shrink-0">并行</span>
-              <span className="relative inline-flex shrink-0 items-center">
-                <select
-                  value={workers}
-                  onChange={(e) => setWorkers(Number(e.target.value))}
-                  className="h-9 w-auto min-w-20 appearance-none rounded-md border border-border bg-surface-2 pl-3 pr-8 text-fg"
-                >
-                  {[1, 2, 3, 4].map((n) => (
-                    <option key={n} value={n}>
-                      {n} 路
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-muted" />
-              </span>
+              <input
+                type="number"
+                min={1}
+                max={8}
+                step={1}
+                value={workers}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (!Number.isFinite(n)) return;
+                  setWorkers(Math.min(8, Math.max(1, Math.round(n))));
+                }}
+                className="h-9 w-16 rounded-md border border-border bg-surface-2 px-2 text-center text-fg tabular-nums"
+                aria-label="并行路数，1 到 8"
+              />
+              <span className="text-faint">路（1–8）</span>
             </label>
             <label className="inline-flex items-start gap-2 leading-5">
               <input
@@ -724,13 +936,52 @@ function Home() {
             </button>
             <button
               type="button"
+              onClick={() => pickVisible(true)}
+              disabled={!visibleModels.length}
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg px-2 text-sm text-muted transition-colors hover:text-fg disabled:opacity-40 sm:w-auto sm:px-3"
+            >
+              全选
+            </button>
+            <button
+              type="button"
+              onClick={() => pickVisible(false)}
+              disabled={!visibleModels.length}
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg px-2 text-sm text-muted transition-colors hover:text-fg disabled:opacity-40 sm:w-auto sm:px-3"
+            >
+              清空
+            </button>
+            <button
+              type="button"
+              onClick={invertVisible}
+              disabled={!visibleModels.length}
+              className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg px-2 text-sm text-muted transition-colors hover:text-fg disabled:opacity-40 sm:w-auto sm:px-3"
+            >
+              反选
+            </button>
+            <button
+              type="button"
               disabled={running}
-              onClick={run}
+              onClick={() => void run()}
               className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg bg-primary px-2 text-sm font-semibold text-primary-fg transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-auto sm:px-5"
             >
               {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
               一键测评
             </button>
+            {!running && (draft || retryableJobs(results, Object.keys(results)).length) ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void run(
+                    draft && missingJobs(results, Object.keys(results)).length
+                      ? { resume: true }
+                      : { retryFailed: true },
+                  )
+                }
+                className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm font-medium transition-colors hover:border-primary sm:w-auto sm:px-4"
+              >
+                {draft && missingJobs(results, Object.keys(results)).length ? "续测" : "重测失败题"}
+              </button>
+            ) : null}
             {running ? (
               <button
                 type="button"
@@ -785,11 +1036,25 @@ function Home() {
               {keyHint(apiKey)} · {hostOf(baseUrl) || "未填主机"}
             </span>
           </div>
-          <div className="mt-3 flex max-h-40 flex-wrap gap-2 overflow-auto">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              value={modelQuery}
+              onChange={(e) => setModelQuery(e.target.value)}
+              placeholder="筛选模型名"
+              className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-3 text-sm text-fg outline-none focus:border-primary sm:max-w-xs"
+            />
+            <span className="font-mono text-[11px] text-muted">
+              已选 {selected.length}/{models.length}
+              {modelQuery.trim() ? ` · 可见 ${visibleModels.length}` : ""}
+            </span>
+          </div>
+          <div className="mt-2 flex max-h-52 flex-wrap gap-2 overflow-auto">
             {models.length === 0 ? (
               <p className="text-sm text-muted">尚未拉取模型</p>
+            ) : visibleModels.length === 0 ? (
+              <p className="text-sm text-muted">没有匹配「{modelQuery}」的模型</p>
             ) : (
-              models.map((m) => (
+              visibleModels.map((m) => (
                 <label
                   key={m.id}
                   className={`inline-flex max-w-full cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ${
@@ -816,7 +1081,14 @@ function Home() {
           <>
         <section className="grid gap-4 lg:grid-cols-[1fr_220px]">
           <div className="card p-4">
-            <p className="kicker kicker-dim mb-2">实时日志</p>
+            <p className="kicker kicker-dim mb-2">
+              实时日志
+              {running ? (
+                <span className="ml-2 normal-case tracking-normal text-muted">
+                  在飞 {liveEntries.length} / {workers} 路
+                </span>
+              ) : null}
+            </p>
             <pre
               ref={logEl}
               className="h-24 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-fg/80"

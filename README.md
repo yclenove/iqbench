@@ -19,6 +19,7 @@
   <img alt="units" src="https://img.shields.io/badge/units-18-241f18?style=flat-square">
   <img alt="probes" src="https://img.shields.io/badge/probes-15-3d352b?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/stack-TanStack%20Start-3d352b?style=flat-square">
+  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA%E5%8F%8B%E9%93%BE-0066cc?style=flat-square"></a>
 </p>
 
 ---
@@ -104,11 +105,42 @@ npm run typecheck
 npm run build && npm run preview
 ```
 
+## 测评跑在哪
+
+模型**不在你电脑上跑**，也不走猛蹬自己的额度。浏览器出题、计时、判分；推理发生在你填的那个网关上。
+
+```
+浏览器  →  猛蹬服务器 /api/bench/chat  →  你的网关 /v1/chat/completions
+           （转发，防 CORS）                （你的 Key、你的 token）
+```
+
+| 环节 | 在哪 | 说明 |
+| :--- | :--- | :--- |
+| 出题 / 并发 / 计时 / 判分 | 你的浏览器 | Q16 也在本机 DOM 里量 SVG |
+| 拉模型、对话转发 | 猛蹬服务器 | 浏览器不能直连多数网关 |
+| 模型推理 | 你填的 API | 费用和思考都在那一侧 |
+| 本场成绩 | 本机 `localStorage` | 关页还在，换浏览器没有 |
+| 公开榜 | 线上数据库 | **登录后**才写入（L站 / Google / X） |
+
+## Key 会过服务器
+
+会。转发必须带上 `Authorization`，Key **会经过猛蹬这台机器**，但只在这一次请求的内存里。
+
+- **不写数据库、不写日志、不进 Git、不进榜单、不拿去调别的接口**
+- 上游报错里出现的 Key 会打码再回给浏览器
+- 云端只留主机名（可脱敏）和 Key 的指纹，用来切作用域、不上报明文
+- 默认放 `sessionStorage`，关标签即清；勾了「记住」才留在本机
+
+做不到「Key 完全不经过这台机器」。要零过手：自己 clone 本仓库本地跑（请求仍经你自己的 `localhost`），或给网关开 CORS 后改成浏览器直连。
+
+公开榜需要登录，不是只有 L 站：L站（需 TL1+）、Google、X 都可以。游客测完只留本机。未完成场次不上公开榜。
+
 ## 设计上的硬规矩
 
-- **Key 不入库、不上报、不进 Git。** 默认 `sessionStorage`，关页即清。
+- **Key 明文不入库、不上报、不进 Git。** 过手转发见上一节。
 - 思考级别固定 **xhigh**，流式输出；对话流 4 次退避重试，拉模型 / 云同步 / 对照拉取各带 3 次，云端写入幂等。
 - 切 Key 换作用域：上一把的成绩不会串到下一把。
+- **断点续测：** 每题写入本机草稿。刷新后点「继续」，不会自动开跑。只重试网络/空答/中止，判错的不刷。题库换代的旧草稿作废。
 - 游客成绩留在这台浏览器；登录后才同步、才进公开模型榜 / 渠道榜。
 - 画廊只认内联 SVG。思考过程里写到 canvas 不再误杀整题。
 - 鉴定和对照只打标签，不碰 IQ、不碰卷面，指认阈值偏保守。
@@ -120,6 +152,7 @@ src/lib/questions.ts   题库、参数化、IQ 公式
 src/lib/judge.ts       抽取、判分、鹈鹕 DOM 几何
 src/lib/generators.ts  袜子 / 球拍 / 逻辑 / 排队求解器
 src/lib/probes.ts      渠道鉴定：知识阶梯 / juice / 联网嫌疑
+src/lib/bench-draft.ts 未完成草稿、续测 / 失败重试
 src/lib/bench-store.ts 本地存档、榜单聚合、降智指认
 src/lib/bench-db.ts    云同步、公开榜、全网基线
 src/lib/report.ts      导出 HTML 报告
@@ -132,7 +165,15 @@ iqbench-spec.md        给外部模型 review 的完整规格
 ## 安全
 
 不要提交 API Key、`.env`、测评原始日志。  
-`.gitignore` 已排除 `.env*` 和本地产物。页面输入框才是放 Key 的地方。
+`.gitignore` 已排除 `.env*`、`linuxdo.secrets.*` 和本地产物。页面输入框才是放 Key 的地方。
+
+托管版会把对话请求转到你的网关，因此 Key 会过服务器内存。自己部署则只过你自己的进程。
+
+## 友情链接
+
+本项目认可并感谢 [LINUX DO](https://linux.do) 社区。登录、讨论渠道和题库都欢迎来 L 站。
+
+- [LINUX DO](https://linux.do)
 
 ## 许可
 

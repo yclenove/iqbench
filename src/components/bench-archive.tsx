@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { History, Trophy, Trash2 } from "lucide-react";
+import { runGaps } from "@/lib/bench-draft";
 import {
   displayHost,
   type BenchRun,
@@ -22,6 +23,7 @@ import {
   type PublicDimRow,
   type PublicModelRow,
   type PublicPairRow,
+  type PublicUserRow,
 } from "@/lib/bench-db";
 import {
   InsightStrip,
@@ -29,18 +31,21 @@ import {
   PublicDimBoard,
   PublicModelTable,
   PublicPairBoard,
+  PublicUserTable,
 } from "@/components/bench-boards";
 
-type Tab = "public-model" | "public-channel" | "public-pair" | "public-dim" | "local";
+type Tab = "public-model" | "public-channel" | "public-pair" | "public-dim" | "public-user" | "local";
 
 export function BenchArchive({
   signedIn,
   onOpen,
+  onResume,
   onChanged,
   refresh,
 }: {
   signedIn: boolean;
   onOpen: (run: BenchRun) => void;
+  onResume?: (run: BenchRun, mode: "continue" | "retry") => void;
   onChanged: () => void;
   refresh: number;
 }) {
@@ -51,6 +56,7 @@ export function BenchArchive({
   const [cloudChannels, setCloudChannels] = useState<PublicChannelRow[]>([]);
   const [pairs, setPairs] = useState<PublicPairRow[]>([]);
   const [dims, setDims] = useState<PublicDimRow[]>([]);
+  const [users, setUsers] = useState<PublicUserRow[]>([]);
   const [admin, setAdmin] = useState(false);
   const [tab, setTab] = useState<Tab>("public-model");
   const [focusModel, setFocusModel] = useState("");
@@ -69,12 +75,14 @@ export function BenchArchive({
         setCloudChannels(pack.channels);
         setPairs(pack.pairs);
         setDims(pack.dims);
+        setUsers(pack.users ?? []);
       })
       .catch(() => {
         setCloudModels([]);
         setCloudChannels([]);
         setPairs([]);
         setDims([]);
+        setUsers([]);
       });
   }, [refresh]);
 
@@ -118,6 +126,7 @@ export function BenchArchive({
           ["public-channel", "渠道"],
           ["public-pair", "同模跨渠"],
           ["public-dim", "维度"],
+          ["public-user", "测评员"],
           ["local", "本机"],
         ] as const
       ).map(([id, label]) => (
@@ -138,7 +147,9 @@ export function BenchArchive({
   const tools = (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <p className="min-w-0 flex-1 text-sm text-muted">
-        {signedIn ? "登录后本场会同步并进入公开榜（不含 Key）。" : "游客成绩只留在这台浏览器。"}
+        {signedIn
+          ? "登录后本场会同步进公开榜（不含 Key）。L站、Google、X 都可以。"
+          : "游客成绩只留这台浏览器。要上公开榜请先登录（L站 / Google / X）。"}
       </p>
       <button
         type="button"
@@ -171,6 +182,7 @@ export function BenchArchive({
         <ul className="grid gap-2">
           {runs.map((run) => {
             const lab = runLabel(run);
+            const gaps = runGaps(run);
             return (
               <li
                 key={run.id}
@@ -179,12 +191,30 @@ export function BenchArchive({
                 <button type="button" onClick={() => onOpen(run)} className="min-w-0 flex-1 text-left">
                   <p className="truncate text-sm font-medium">
                     {lab.when} · {lab.n} 模
+                    {gaps.miss.length ? (
+                      <span className="ml-1 text-xs font-normal text-primary">未完成 {gaps.miss.length} 题</span>
+                    ) : gaps.retry.length ? (
+                      <span className="ml-1 text-xs font-normal text-muted">可重试 {gaps.retry.length}</span>
+                    ) : null}
                   </p>
                   <p className="truncate text-xs text-muted">
                     {lab.topScore} · {lab.topName}
                     {run.host ? ` · ${displayHost(run.host, run.hostPublic)}` : ""}
                   </p>
                 </button>
+                {onResume && (gaps.miss.length || gaps.retry.length) ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-primary"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onResume(run, gaps.miss.length ? "continue" : "retry");
+                    }}
+                  >
+                    {gaps.miss.length ? "续测" : "重试失败"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-bg hover:text-bad"
@@ -214,6 +244,7 @@ export function BenchArchive({
         <PublicPairBoard pairs={pairs} focus={focusModel} onFocus={setFocusModel} />
       ) : null}
       {tab === "public-dim" ? <PublicDimBoard rows={dims} /> : null}
+      {tab === "public-user" ? <PublicUserTable rows={users} /> : null}
       {tab === "local" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {history}

@@ -16,7 +16,8 @@ await build({
   stdin: {
     contents: `
       export * from "./src/lib/probes";
-      export { containsNumber } from "./src/lib/judge";
+      export { containsNumber, judgeItem } from "./src/lib/judge";
+      export { QUESTIONS } from "./src/lib/questions";
       export { genKnights, genLineup, genSocks, socksAnswer } from "./src/lib/generators";
       export { baselineVerdict, baselineLine } from "./src/lib/bench-store";
       export { mulberry32 } from "./src/lib/rng";
@@ -45,6 +46,8 @@ const {
   probeLine,
   ladderAgeDays,
   containsNumber,
+  judgeItem,
+  QUESTIONS,
   genKnights,
   genLineup,
   genSocks,
@@ -163,4 +166,19 @@ test("降智对照：指认阈值宁缺毋滥", () => {
   assert.ok(!baselineVerdict(110, base).suspect, "只低 10 分不指认");
   assert.ok(!baselineVerdict(95, { ...base, runs: 4 }).suspect, "样本 <5 不指认");
   assert.ok(!baselineVerdict(105, { runs: 10, med_iq: 120, p25_iq: 100 }).suspect, "高于下四分位不指认");
+});
+
+test("安眠药：不应立即给药也算压住直觉", () => {
+  const q = QUESTIONS.items.find((x) => x.id === "Q1");
+  assert.ok(q);
+  const pass = [
+    "最终答案: 护士不应立即给药，应记录并通知医生。",
+    "最终答案: 不叫醒，已经睡着了就不用吃药",
+    "最终答案: 不给药",
+    "最终答案: 不应该叫醒病人",
+  ];
+  for (const t of pass) {
+    assert.ok(judgeItem(q, t, 20).ok, t);
+  }
+  assert.ok(!judgeItem(q, "最终答案: 叫醒并喂药", 20).ok);
 });

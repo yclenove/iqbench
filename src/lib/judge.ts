@@ -84,14 +84,15 @@ function namedScore(
 ): { ok: boolean; detail: string; memorized21?: boolean; partial?: number; tags?: string[] } {
   const focus = extractFinal(full);
   if (name === "sleep") {
-    const neg =
-      /^(不|否|不必|无需|不要|不用|不应该)/.test(focus) ||
-      /(不叫醒|不必叫醒|无需叫醒|不要叫醒|不用吃药|不必吃药|无需服药|不必服药|不给药|不要喂药|已经睡着|睡着了就不用|暂缓给药|暂不给药|持药观察)/.test(
-        focus,
-      );
+    const blob = focus || full.slice(-400);
+    const withhold =
+      /不(?:必|需|要|用|应|该)?(?:该)?(?:立即|马上|此刻|现在|当场)?(?:给药|喂药|服药|吃药|发药)/.test(blob) ||
+      /不(?:必|需|要|用|应|该)?(?:该)?(?:叫醒|唤醒)/.test(blob) ||
+      /^(不|否|不必|无需|不要|不用|不应该)/.test(blob) ||
+      /(已经睡着|睡着了就不用|暂缓给药|暂不给药|持药观察|等(?:他|她|其|病人|患者)?醒)/.test(blob);
     const forceWake =
-      /(叫醒并|叫醒后|必须叫醒|应该叫醒|要叫醒|必须喂药|叫醒并喂)/.test(focus) && !/不/.test(focus);
-    const ok = neg && !forceWake;
+      /(叫醒并|叫醒后|必须叫醒|应该叫醒|要叫醒|必须喂药|叫醒并喂)/.test(blob) && !/不/.test(blob);
+    const ok = withhold && !forceWake;
     return { ok, detail: ok ? "判定：不叫醒/不喂药" : "未压住「该喂药」的直觉" };
   }
   if (name === "wash") {
@@ -364,6 +365,38 @@ function parseViewBox(svg: string) {
   return { minX: Number(m[1]), minY: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
 }
 
+function boxOverlapFrac(
+  b: Box,
+  vb: { minX: number; minY: number; w: number; h: number },
+  pad: number,
+) {
+  const ix = Math.max(0, Math.min(b.x + b.w, vb.minX + vb.w + pad) - Math.max(b.x, vb.minX - pad));
+  const iy = Math.max(0, Math.min(b.y + b.h, vb.minY + vb.h + pad) - Math.max(b.y, vb.minY - pad));
+  return (ix * iy) / Math.max(1, b.w * b.h);
+}
+
+function centerInView(
+  b: Box,
+  vb: { minX: number; minY: number; w: number; h: number },
+  pad: number,
+) {
+  return (
+    b.cx >= vb.minX - pad &&
+    b.cx <= vb.minX + vb.w + pad &&
+    b.cy >= vb.minY - pad &&
+    b.cy <= vb.minY + vb.h + pad
+  );
+}
+
+const FRAME_IDS = [
+  "pelican-body",
+  "pelican-beak",
+  "wheel-front",
+  "wheel-rear",
+  "foot-left",
+  "foot-right",
+];
+
 const PELICAN_IDS = [
   "pelican-body",
   "pelican-beak",
@@ -610,24 +643,30 @@ function scorePelican(text: string): PelicanScore {
         notesA.push("单脚踩踏");
       } else notesA.push("脚不在脚踏上");
 
-      // 4. 画面内 2 分（整体包围盒与 viewBox 求交，容差 8px 颠簸）
+      // 4. 画面内 2 分：只看鹈鹕/车轮/脚，太阳出框不误伤；关键件中心飞出再扣 2。
       const vb = parseViewBox(raw);
-      const cb = probe.contentBox();
-      if (cb) {
-        const pad = 8;
-        const ix =
-          Math.max(0, Math.min(cb.x + cb.w, vb.minX + vb.w + pad) - Math.max(cb.x, vb.minX - pad));
-        const iy =
-          Math.max(0, Math.min(cb.y + cb.h, vb.minY + vb.h + pad) - Math.max(cb.y, vb.minY - pad));
-        const frac = (ix * iy) / (cb.w * cb.h);
-        if (frac >= 0.98) {
+      const parts = FRAME_IDS.map((id) => ({ id, b: probe.box(id) })).filter(
+        (p): p is { id: string; b: Box } => Boolean(p.b),
+      );
+      const pad = 10;
+      if (!parts.length) {
+        notesA.push("无可渲染关键件");
+      } else {
+        const flown = parts.filter((p) => !centerInView(p.b, vb, pad));
+        const minFrac = Math.min(...parts.map((p) => boxOverlapFrac(p.b, vb, pad)));
+        if (flown.length) {
+          notesA.push(`乱飞：${flown.map((p) => p.id).join("/")}`);
+        } else if (minFrac >= 0.92) {
           a += 2;
           notesA.push("画面内");
-        } else if (frac >= 0.85) {
+        } else if (minFrac >= 0.75) {
           a += 1;
-          notesA.push(`小幅出框（${Math.round(frac * 100)}% 在框内）`);
-        } else notesA.push(`大幅出框（${Math.round(frac * 100)}% 在框内）`);
-      } else notesA.push("无可渲染图形");
+          notesA.push(`小幅出框（关键件 ${Math.round(minFrac * 100)}% 在框内）`);
+        } else {
+          notesA.push(`大幅出框（关键件 ${Math.round(minFrac * 100)}% 在框内）`);
+        }
+        if (flown.length) a = Math.max(0, a - 2);
+      }
 
       // 5. 鹈鹕形态 2 分（长扁喙 / 喉囊在喙下 / 身体占比）
       const body = probe.box("pelican-body");

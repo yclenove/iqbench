@@ -45,7 +45,7 @@ function Login() {
           <img src="/favicon.svg" alt="" className="size-14 rounded-2xl" />
           <p className="kicker mt-4">猛蹬·145</p>
           <h1 className="mt-2 text-2xl font-bold text-balance">登录测评台</h1>
-          <p className="mt-1 text-sm text-muted">我就看智商能低到什么程度。大模型能飞。</p>
+          <p className="mt-1 text-sm text-muted">登录后成绩才进公开榜。L站、Google、X 都可以（L站需 TL1+）。</p>
         </div>
         {authEnabled ? (
           <>
