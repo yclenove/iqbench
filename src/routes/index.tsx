@@ -100,6 +100,18 @@ type ModelResult = {
   baseline?: Baseline;
 };
 
+function failBadge(tags?: string[]) {
+  const t = tags?.[0];
+  if (!t) return null;
+  const http = t.match(/HTTP\s*(\d{3})/i);
+  if (http) return http[1];
+  if (/网络失败/.test(t)) return "NET";
+  if (/已停止/.test(t)) return "停";
+  if (/超时/.test(t)) return "TO";
+  if (/空答|无产出|超预算/.test(t)) return "空";
+  return t.length > 4 ? t.slice(0, 4) : t;
+}
+
 function mapRun(run: BenchRun): Record<string, ModelResult> {
   const mapped: Record<string, ModelResult> = {};
   for (const m of run.models) {
@@ -661,7 +673,12 @@ function Home() {
       }
     }
 
-    const leftover = missingJobs(nextResults, modelIds);
+    let leftover: Job[] = [];
+    try {
+      leftover = missingJobs(nextResults, modelIds);
+    } catch {
+      leftover = [];
+    }
     if (Object.keys(nextResults).length) {
       const finished = makeRun(baseUrl, apiKey, nextResults, {
         hostPublic,
@@ -1262,13 +1279,19 @@ function Home() {
                                 —
                               </td>
                             );
+                          const mark = !it.ok ? failBadge(it.tags) : null;
                           return (
                             <td
                               key={u.id}
-                              className={`py-2 pr-2 tabular-nums ${it.ok ? "text-ok" : "text-bad"}`}
+                              className={`relative py-2 pr-3 tabular-nums ${it.ok ? "text-ok" : "text-bad"}`}
+                              title={it.tags?.[0] || it.detail}
                             >
                               {it.ok ? "✓" : "✗"} {it.score}
-                              {it.tags?.[0] ? ` ${it.tags[0]}` : ""}
+                              {mark ? (
+                                <span className="absolute right-0 top-0 rounded-bl bg-bad/20 px-1 font-mono text-[9px] leading-4 text-bad">
+                                  {mark}
+                                </span>
+                              ) : null}
                             </td>
                           );
                         })}
@@ -1314,7 +1337,11 @@ function Home() {
                         {m}
                         <span className="ml-1.5 font-normal text-muted">
                           {it.score}/14
-                          {it.tags?.[0] ? ` · ${it.tags[0]}` : ""}
+                          {failBadge(it.tags) ? (
+                            <span className="ml-1 rounded bg-bad/20 px-1 font-mono text-[9px] text-bad">
+                              {failBadge(it.tags)}
+                            </span>
+                          ) : null}
                         </span>
                       </p>
                       <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted" title={it.detail}>

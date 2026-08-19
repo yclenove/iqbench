@@ -1,6 +1,7 @@
 {
   "name": "iqbench",
   "private": true,
+  "license": "MIT",
   "sideEffects": false,
   "type": "module",
   "bin": {

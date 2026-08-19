@@ -322,28 +322,17 @@ async function queryDims(sql: Sql): Promise<PublicDimRow[]> {
 async function queryUsers(sql: Sql): Promise<PublicUserRow[]> {
   try {
     const rows = await sql.query(
-      `with agg as (
-          select user_id,
-                 round(percentile_cont(0.5) within group (order by iq))::int as med_iq,
-                 max(iq)::int as best_iq,
-                 count(*)::int as runs,
-                 count(distinct model)::int as models
-          from bench_public_scores
-          group by user_id
-        ),
-        top as (
-          select distinct on (user_id) user_id, model as top_model
-          from bench_public_scores
-          order by user_id, iq desc
-        )
-        select coalesce(nullif(btrim(u."name"), ''), '匿名') as name,
-               a.med_iq, a.best_iq, a.runs, a.models,
-               coalesce(t.top_model, '—') as top_model
-        from agg a
-        left join top t on t.user_id = a.user_id
-        left join "user" u on u.id = a.user_id
-        order by a.med_iq desc, a.best_iq desc, a.runs desc
-        limit 50`,
+      `select coalesce(nullif(btrim(u."name"), ''), '匿名') as name,
+              round(percentile_cont(0.5) within group (order by s.iq))::int as med_iq,
+              max(s.iq)::int as best_iq,
+              count(*)::int as runs,
+              count(distinct s.model)::int as models,
+              (array_agg(s.model order by s.iq desc))[1] as top_model
+       from bench_public_scores s
+       left join "user" u on u.id = s.user_id
+       group by s.user_id, u."name"
+       order by med_iq desc, best_iq desc, runs desc
+       limit 50`,
     );
     return rows.map((r) => ({
       name: String(r.name ?? "匿名"),
@@ -375,15 +364,20 @@ export const publicDimBoard = createServerFn({ method: "GET" }).handler(async ()
 );
 
 export const publicBoardPack = createServerFn({ method: "GET" }).handler(async () => {
-  const sql = await getSql();
-  const [models, channels, pairs, dims, users] = await Promise.all([
-    queryModels(sql),
-    queryChannels(sql),
-    queryPairs(sql),
-    queryDims(sql),
-    queryUsers(sql),
-  ]);
-  return { models, channels, pairs, dims, users };
+  const empty = { models: [], channels: [], pairs: [], dims: [], users: [] };
+  try {
+    const sql = await getSql();
+    const [models, channels, pairs, dims] = await Promise.all([
+      queryModels(sql),
+      queryChannels(sql),
+      queryPairs(sql),
+      queryDims(sql),
+    ]);
+    const users = await queryUsers(sql);
+    return { models, channels, pairs, dims, users };
+  } catch {
+    return empty;
+  }
 });
 
 export const deleteCloudRun = createServerFn({ method: "POST" })

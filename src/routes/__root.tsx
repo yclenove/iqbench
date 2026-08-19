@@ -69,6 +69,15 @@ export const Route = createRootRoute({
               >
                 LINUX DO
               </a>
+              <span className="text-faint">·</span>
+              <a
+                href="https://htbike.amiibot.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-fg underline decoration-primary/50 underline-offset-2 transition-colors hover:text-primary"
+              >
+                鹈鹕骑车榜
+              </a>
             </p>
           </div>
         </footer>

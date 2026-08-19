@@ -14,12 +14,23 @@
 </p>
 
 <p align="center">
+  <a href="https://linux.do">
+    <img src="docs/linuxdo.svg" alt="本项目认可 LINUX DO 社区" width="520">
+  </a>
+</p>
+
+<p align="center">
+  本项目认可 <a href="https://linux.do">LINUX DO</a> 社区
+</p>
+
+<p align="center">
   <img alt="bench" src="https://img.shields.io/badge/bench-v7-d4a24c?style=flat-square">
   <img alt="iq" src="https://img.shields.io/badge/IQ-55–145-1a1712?style=flat-square">
   <img alt="units" src="https://img.shields.io/badge/units-18-241f18?style=flat-square">
   <img alt="probes" src="https://img.shields.io/badge/probes-15-3d352b?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/stack-TanStack%20Start-3d352b?style=flat-square">
-  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-%E7%A4%BE%E5%8C%BA%E5%8F%8B%E9%93%BE-0066cc?style=flat-square"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-d4a24c?style=flat-square"></a>
+  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-%E8%AE%A4%E5%8F%AF%E7%A4%BE%E5%8C%BA-16315c?style=flat-square"></a>
 </p>
 
 ---
@@ -181,10 +192,16 @@ iqbench-spec.md        给外部模型 review 的完整规格
 
 ## 友情链接
 
+<p align="center">
+  <a href="https://linux.do"><img src="docs/linuxdo.svg" alt="LINUX DO" width="420"></a>
+</p>
+
 本项目认可并感谢 [LINUX DO](https://linux.do) 社区。登录、讨论渠道和题库都欢迎来 L 站。
 
-- [LINUX DO](https://linux.do)
+- [linux.do](https://linux.do)
+- [GROK鹈鹕骑车排行榜](https://htbike.amiibot.com/)
 
 ## 许可
 
-私人项目。未另声明前，不要公开发布别人的 Key 或渠道地址。
+[MIT License](./LICENSE)。可以自由使用、修改、分发。  
+不要公开发布别人的 API Key 或未授权的渠道地址。
