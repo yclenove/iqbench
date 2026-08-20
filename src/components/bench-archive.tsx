@@ -28,15 +28,14 @@ import {
   type PublicUserRow,
 } from "@/lib/bench-db";
 import {
-  InsightStrip,
+  BoardOverview,
   PublicChannelTable,
-  PublicDimBoard,
   PublicModelTable,
   PublicPairBoard,
   PublicUserTable,
 } from "@/components/bench-boards";
 
-type Tab = "public-model" | "public-channel" | "public-pair" | "public-dim" | "public-user" | "local";
+type Tab = "overview" | "public-model" | "public-channel" | "public-pair" | "public-user" | "local";
 
 export function BenchArchive({
   signedIn,
@@ -62,7 +61,7 @@ export function BenchArchive({
   const [admin, setAdmin] = useState(false);
   const [repairMsg, setRepairMsg] = useState("");
   const [repairing, setRepairing] = useState(false);
-  const [tab, setTab] = useState<Tab>("public-model");
+  const [tab, setTab] = useState<Tab>("overview");
   const [focusModel, setFocusModel] = useState("");
 
   useEffect(() => {
@@ -150,10 +149,10 @@ export function BenchArchive({
     <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full border border-border bg-surface p-1">
       {(
         [
+          ["overview", "总览"],
           ["public-model", "模型"],
           ["public-channel", "渠道"],
-          ["public-pair", "同模跨渠"],
-          ["public-dim", "维度"],
+          ["public-pair", "同模对照"],
           ["public-user", "蹬er"],
           ["local", "本机"],
         ] as const
@@ -287,7 +286,9 @@ export function BenchArchive({
     <div>
       {tabs}
       {tab === "local" || admin ? tools : null}
-      {tab !== "local" ? <InsightStrip models={cloudModels} channels={cloudChannels} /> : null}
+      {tab === "overview" ? (
+        <BoardOverview models={cloudModels} channels={cloudChannels} dims={dims} />
+      ) : null}
       {tab === "public-model" ? (
         <PublicModelTable rows={cloudModels} pairs={pairs} onOpenModel={openPair} />
       ) : null}
@@ -295,7 +296,6 @@ export function BenchArchive({
       {tab === "public-pair" ? (
         <PublicPairBoard pairs={pairs} focus={focusModel} onFocus={setFocusModel} />
       ) : null}
-      {tab === "public-dim" ? <PublicDimBoard rows={dims} /> : null}
       {tab === "public-user" ? <PublicUserTable rows={users} /> : null}
       {tab === "local" ? (
         <div className="grid gap-4 lg:grid-cols-2">

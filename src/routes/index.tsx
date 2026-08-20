@@ -11,13 +11,13 @@ import {
 } from "lucide-react";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { AppHeader } from "@/components/app-header";
-import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq } from "@/lib/questions";
+import { MAX_SCORE, QUESTIONS, UNITS, bootstrapIq, instantiateQuestion, modelIq, streamHold } from "@/lib/questions";
 import { PelicanLive } from "@/components/pelican-frame";
-import { extractHtml, extractSvg, isGatewayJunk, judgeItem, looksLikeDraw, pickVisibleAnswer, shortFail } from "@/lib/judge";
+import { extractHtml, extractSvg, isGatewayJunk, isOpenDraw, judgeItem, looksLikeDraw, pickVisibleAnswer, shortFail, stitchDraw } from "@/lib/judge";
 import { craftLine, priorCraftScores, scoreCraft } from "@/lib/svg-craft";
 import { listModels } from "@/lib/proxy";
 import { streamChat, withRetry } from "@/lib/stream-chat";
-import { EFFORT_LABEL, EFFORTS, expandQueue, isEffort, isEffortAlias, parseSlot, type Effort } from "@/lib/effort";
+import { EFFORT_LABEL, expandQueue, isEffort, isEffortAlias, parseSlot, type Effort } from "@/lib/effort";
 import { highestEffortFor, outputCap, specEffortsFor, specSummary, type SpecIndex } from "@/lib/model-spec";
 import { buildReportHtml, downloadReport } from "@/lib/report";
 import {
@@ -105,6 +105,18 @@ type ModelResult = {
   baseline?: Baseline;
 };
 
+function cutHint(resp: { content?: string; reasoning?: string; finish?: string }, qid: string) {
+  const body = (resp.content || "").trim();
+  const thought = (resp.reasoning || "").trim();
+  const f = resp.finish || "";
+  if (f === "length" || f === "max_tokens") return " ←输出写满上限";
+  if (f === "idle") return body ? " ←正文停顿过久" : " ←思考停顿过久";
+  if (f === "timeout") return " ←整题硬顶";
+  if (qid === "Q16" && isOpenDraw(body || thought)) return " ←SVG没写完";
+  if (!body && thought) return " ←思考有字、正文没出来";
+  return "";
+}
+
 function failBadge(tags?: string[]) {
   const t = tags?.[0];
   if (!t) return null;
@@ -164,6 +176,25 @@ function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const [results, setResults] = useState<Record<string, ModelResult>>({});
   const [liveJobs, setLiveJobs] = useState<Record<string, string>>({});
+  const liveBuf = useRef<Record<string, string>>({});
+  const liveTimer = useRef(0);
+  const paintLive = (tag: string, text: string | null) => {
+    if (text == null) delete liveBuf.current[tag];
+    else liveBuf.current[tag] = text;
+    if (liveTimer.current) return;
+    liveTimer.current = window.setTimeout(() => {
+      liveTimer.current = 0;
+      setLiveJobs({ ...liveBuf.current });
+    }, 200);
+  };
+  const resetLive = () => {
+    liveBuf.current = {};
+    if (liveTimer.current) {
+      clearTimeout(liveTimer.current);
+      liveTimer.current = 0;
+    }
+    setLiveJobs({});
+  };
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [histTick, setHistTick] = useState(0);
   const [viewing, setViewing] = useState<BenchRun | null>(null);
@@ -236,7 +267,7 @@ function Home() {
     setModels([]);
     setPicked({});
     setLog("");
-    setLiveJobs({});
+    resetLive();
     setViewing(null);
     setStatus("已切换钥匙，本场成绩已清空");
   }, [baseUrl, apiKey]);
@@ -310,12 +341,22 @@ function Home() {
       let changed = false;
       for (const id of selected) {
         const def = defaultEffortsFor(id);
+        const allow = new Set<Effort>([...specEffortsFor(specs, id), "none"]);
         if (!prev[id]?.length) {
           next[id] = def;
           changed = true;
-        } else if (specs && prev[id].length === 1 && prev[id][0] === "xhigh" && def[0] !== "xhigh") {
-          next[id] = def;
-          changed = true;
+        } else {
+          const clipped = prev[id].filter((e) => allow.has(e));
+          if (!clipped.length) {
+            next[id] = def;
+            changed = true;
+          } else if (clipped.join() !== prev[id].join()) {
+            next[id] = clipped;
+            changed = true;
+          } else if (specs && prev[id].length === 1 && prev[id][0] === "xhigh" && def[0] !== "xhigh") {
+            next[id] = def;
+            changed = true;
+          }
         }
       }
       return changed ? next : prev;
@@ -529,7 +570,7 @@ function Home() {
     setRunning(true);
     patchLive({ running: true });
     setStatus(`测评中 · ${nWorkers} 路并行`);
-    setLiveJobs({});
+    resetLive();
     setResults({ ...nextResults });
     snapDraft(modelIds, nextResults);
     append(
@@ -550,7 +591,7 @@ function Home() {
         const inst = instantiateQuestion(q, seed);
         const tag = `${model}/${q.id}`;
         append(`→ ${tag} ${q.title}${q.parametric ? ` [${inst.label}]` : ""}`);
-        setLiveJobs((prev) => ({ ...prev, [tag]: "连接中…" }));
+        paintLive(tag, "连接中…");
         const t0 = performance.now();
         let content = "";
         let preview = "";
@@ -566,14 +607,12 @@ function Home() {
               { role: "user", content: inst.prompt },
             ],
             signal: ac.signal,
-            timeoutMs: 600_000,
-            idleMs: 50_000,
-            thinkHoldMs: 180_000,
+            ...streamHold(q),
             maxTokens: outputCap(specs, parseSlot(model).model),
             apiStyle,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
-              setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
+              paintLive(tag, shown);
             },
             onRetry: (attempt, max, reason) => {
               const line = `网络抖动 ${attempt}/${max}：${reason.slice(0, 80)}`;
@@ -585,7 +624,7 @@ function Home() {
           const thoughtLen = (resp.reasoning || "").trim().length;
           let thoughtBank = (resp.reasoning || "").trim();
           traceLines.push(
-            `第1次 finish=${resp.finish || "stop"} 正文${bodyLen}字 思考${thoughtLen}字`,
+            `第1次 finish=${resp.finish || "stop"} 正文${bodyLen}字 思考${thoughtLen}字${cutHint(resp, q.id)}`,
           );
           let picked = pickVisibleAnswer(resp.content || "", resp.reasoning || "", resp.finish);
           if (q.id === "Q17" && picked.from === "thought") {
@@ -599,7 +638,53 @@ function Home() {
           if (!preview.trim() && thoughtLen) {
             preview = `【思考摘录 ${thoughtLen}字】\n${(resp.reasoning || "").trim().slice(-900)}`;
           }
-          if ((!content.trim() || (picked.cut && picked.from === "body")) && !stopRef.current) {
+          if (q.id === "Q16" && isOpenDraw(content) && !stopRef.current) {
+            traceLines.push("SVG 未闭合，续写");
+            append(`  ${tag} SVG 未闭合，续写`);
+            const more = await streamChat({
+              baseUrl: baseUrl.trim(),
+              apiKey: apiKey.trim(),
+              model: parseSlot(model).model,
+              reasoningEffort: parseSlot(model).effort,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "你在续写一份被截断的 HTML/SVG。只输出从截断处往后的源码，直到闭合 </svg> 与 </html>。不要 markdown、不要解释、不要从头再写一份。",
+                },
+                {
+                  role: "user",
+                  content: `下面是已写出的文档末尾，请接着写：\n\n${content.slice(-2800)}`,
+                },
+              ],
+              signal: ac.signal,
+              timeoutMs: 420_000,
+              idleMs: 180_000,
+              thinkHoldMs: 180_000,
+              maxTokens: outputCap(specs, parseSlot(model).model),
+              apiStyle,
+              onDelta: ({ content: c, reasoning: r }) => {
+                const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
+                paintLive(tag, shown);
+              },
+              onRetry: (attempt, max, reason) => {
+                const line = `续写网络 ${attempt}/${max}：${reason.slice(0, 80)}`;
+                traceLines.push(line);
+                append(`  ${tag} ${line}`);
+              },
+            });
+            const extra = pickVisibleAnswer(more.content || "", more.reasoning || "", more.finish);
+            content = stitchDraw(content, extra.text);
+            preview = content.slice(0, 2500);
+            picked = { text: content, cut: isOpenDraw(content), from: picked.from };
+            traceLines.push(
+              `续写 finish=${more.finish || "stop"} 补${(extra.text || "").length}字 ${isOpenDraw(content) ? "仍未闭合" : "已闭合"}`,
+            );
+          } else if (
+            q.id !== "Q16" &&
+            (!content.trim() || (picked.cut && picked.from === "body")) &&
+            !stopRef.current
+          ) {
             const why = picked.cut ? "思考/输出被截断" : "正文为空";
             traceLines.push(`${why}，压缩重试`);
             append(`  ${tag} ${why}，压缩重试`);
@@ -611,19 +696,18 @@ function Home() {
               messages: [
                 {
                   role: "system",
-                  content: q.id === "Q16" ? QUESTIONS.drawCompact : QUESTIONS.compactSystem,
+                  content: QUESTIONS.compactSystem,
                 },
                 { role: "user", content: inst.prompt },
               ],
               signal: ac.signal,
-              timeoutMs: 300_000,
-              idleMs: 50_000,
-              thinkHoldMs: 180_000,
+              ...streamHold(q),
+              timeoutMs: Math.min(420_000, streamHold(q).timeoutMs),
               maxTokens: outputCap(specs, parseSlot(model).model),
               apiStyle,
               onDelta: ({ content: c, reasoning: r }) => {
                 const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
-                setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
+                paintLive(tag, shown);
               },
               onRetry: (attempt, max, reason) => {
                 const line = `压缩通道网络 ${attempt}/${max}：${reason.slice(0, 80)}`;
@@ -640,9 +724,7 @@ function Home() {
             const secondUse =
               q.id === "Q17" && second.from === "thought"
                 ? { text: "", cut: true, from: "none" as const }
-                : q.id === "Q16" && second.from === "thought" && !looksLikeDraw(second.text)
-                  ? { text: "", cut: true, from: "none" as const }
-                  : second;
+                : second;
             if ((again.reasoning || "").trim().length > thoughtBank.length) {
               thoughtBank = (again.reasoning || "").trim();
             }
@@ -656,6 +738,47 @@ function Home() {
             }
             if (picked.cut && content.trim()) {
               preview = `输出截断（思考未完成）\n${preview}`;
+            }
+          } else if (q.id === "Q16" && !content.trim() && !stopRef.current) {
+            traceLines.push("画题正文为空，压缩重试");
+            append(`  ${tag} 画题正文为空，压缩重试`);
+            const again = await streamChat({
+              baseUrl: baseUrl.trim(),
+              apiKey: apiKey.trim(),
+              model: parseSlot(model).model,
+              reasoningEffort: parseSlot(model).effort,
+              messages: [
+                { role: "system", content: QUESTIONS.drawCompact },
+                { role: "user", content: inst.prompt },
+              ],
+              signal: ac.signal,
+              timeoutMs: 420_000,
+              idleMs: 180_000,
+              thinkHoldMs: 180_000,
+              maxTokens: outputCap(specs, parseSlot(model).model),
+              apiStyle,
+              onDelta: ({ content: c, reasoning: r }) => {
+                const shown = (r ? `【思考】${r.slice(-280)}\n` : "") + c.slice(-500);
+                paintLive(tag, shown);
+              },
+              onRetry: (attempt, max, reason) => {
+                const line = `压缩通道网络 ${attempt}/${max}：${reason.slice(0, 80)}`;
+                traceLines.push(line);
+                append(`  ${tag} ${line}`);
+              },
+            });
+            const second = pickVisibleAnswer(again.content || "", again.reasoning || "", again.finish);
+            const secondUse =
+              second.from === "thought" && !looksLikeDraw(second.text)
+                ? { text: "", cut: true, from: "none" as const }
+                : second;
+            if ((again.reasoning || "").trim().length > thoughtBank.length) {
+              thoughtBank = (again.reasoning || "").trim();
+            }
+            if (secondUse.text.trim()) {
+              content = secondUse.text;
+              preview = (again.content || "").slice(0, 2500) || content.slice(0, 2500);
+              picked = secondUse;
             }
           }
           if (
@@ -743,11 +866,7 @@ function Home() {
         bucket.equalRate = iq.equalRate;
         setResults({ ...nextResults });
         snapDraft(modelIds, nextResults);
-        setLiveJobs((prev) => {
-          const copy = { ...prev };
-          delete copy[tag];
-          return copy;
-        });
+        paintLive(tag, null);
         append(
           `  ${tag} ${judged.ok ? "OK" : "FAIL"} 准${judged.accuracy}×速${judged.speedFactor.toFixed(2)}=${judged.score} ${dt.toFixed(1)}s`,
         );
@@ -791,7 +910,7 @@ function Home() {
             apiStyle,
             onDelta: ({ content: c, reasoning: r }) => {
               const shown = (r ? `【思考】${r.slice(-160)}\n` : "") + c.slice(-300);
-              setLiveJobs((prev) => ({ ...prev, [tag]: shown }));
+              paintLive(tag, shown);
             },
             onRetry: (attempt, max, reason) => {
               append(`  ${tag} 网络 ${attempt}/${max}：${reason.slice(0, 80)}`);
@@ -813,7 +932,7 @@ function Home() {
           const rows = [...prog.rows];
           const have = new Set(rows.map((r) => r.id));
           if (have.size) append(`  ${model} 鉴定续上（已有 ${have.size}/${KNOWLEDGE_LADDER.length}）`);
-          setLiveJobs((prev) => ({ ...prev, [tag]: "鉴定中…" }));
+          paintLive(tag, "鉴定中…");
           for (const p of KNOWLEDGE_LADDER) {
             if (stopRef.current) break;
             if (have.has(p.id)) continue;
@@ -842,11 +961,7 @@ function Home() {
           nextResults[model].probeProgress = undefined;
           setResults({ ...nextResults });
           snapDraft(modelIds, nextResults);
-          setLiveJobs((prev) => {
-            const copy = { ...prev };
-            delete copy[tag];
-            return copy;
-          });
+          paintLive(tag, null);
           append(`  ${model} 鉴定完成：${probeLine(probe)}`);
         }
       }
@@ -885,6 +1000,7 @@ function Home() {
       const finished = makeRun(baseUrl, apiKey, nextResults, {
         hostPublic,
         id: draftIdRef.current || undefined,
+        rider: userRef.current?.displayName || undefined,
       });
       saveRun(finished);
       setHistTick((n) => n + 1);
@@ -904,7 +1020,7 @@ function Home() {
         }
       }
     }
-    setLiveJobs({});
+    resetLive();
     setRunning(false);
     patchLive({ running: false });
     setStatus(stopRef.current || leftover.length ? "未完成，可续测" : "完成");
@@ -983,7 +1099,7 @@ function Home() {
             <p className="kicker">Leaderboard</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight">榜单</h1>
             <p className="mt-1 text-sm text-muted">
-              模型看中位，渠道看相对增益，蹬er看登录用户贡献。游客只留本机；L站 / Google / X 登录后才进公开榜。
+              先看总览图。模型比中位 IQ，渠道比相对增益，蹬er 是登录贡献者。游客只留本机。
             </p>
           </div>
           <BenchArchive
@@ -1057,6 +1173,13 @@ function Home() {
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://api.example.com/v1"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore="true"
+                data-lpignore="true"
+                name="iqbench-base"
+                inputMode="url"
                 className="h-11 w-full rounded-lg border border-border bg-surface-2 px-3 text-base text-fg outline-none focus:border-primary sm:text-sm"
               />
             </label>
@@ -1064,7 +1187,13 @@ function Home() {
               <span className="mb-1.5 block text-[13px] text-muted">API Key（明文不入库）</span>
               <input
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
+                autoCorrect="off"
+                spellCheck={false}
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                name="iqbench-token"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="只在本标签页使用"
@@ -1385,7 +1514,7 @@ function Home() {
                         <p className="mt-1 text-[11px] text-muted">渠道别名已带级别，请求不传 reasoning；输出上限仍按规格</p>
                       ) : (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                          {EFFORTS.map((e) => (
+                          {([...allowed.filter((e) => e !== "none"), "none"] as Effort[]).map((e) => (
                             <button
                               key={e}
                               type="button"
@@ -1394,8 +1523,8 @@ function Home() {
                                 cur.includes(e)
                                   ? "border-primary/70 bg-primary/10 text-fg"
                                   : "border-border text-muted"
-                              } ${allowed.includes(e) || e === "none" ? "" : "opacity-50"}`}
-                              title={e === hi ? "规格最高档（默认）" : allowed.includes(e) ? "规格支持" : "规格未列"}
+                              }`}
+                              title={e === hi ? "规格最高档（默认）" : e === "none" ? "不传 reasoning" : "规格支持"}
                             >
                               {EFFORT_LABEL[e]}
                             </button>

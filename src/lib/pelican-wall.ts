@@ -13,6 +13,7 @@ export type PelicanPiece = {
   detail: string;
   craft?: SvgCraft;
   local?: boolean;
+  rider?: string;
 };
 
 export function piecesFromRuns(runs: BenchRun[], local = false): PelicanPiece[] {
@@ -33,6 +34,7 @@ export function piecesFromRuns(runs: BenchRun[], local = false): PelicanPiece[] 
         detail: it.detail || "",
         craft: it.craft,
         local,
+        rider: r.rider,
       });
     }
   }

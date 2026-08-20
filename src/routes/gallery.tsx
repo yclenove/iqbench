@@ -8,6 +8,7 @@ import { displayHost, loadRuns } from "@/lib/bench-store";
 import { PelicanLive } from "@/components/pelican-frame";
 import { mergePieces, piecesFromRuns, type PelicanPiece } from "@/lib/pelican-wall";
 import { craftLine } from "@/lib/svg-craft";
+import { EFFORT_LABEL, isEffortAlias, parseSlot } from "@/lib/effort";
 
 export const Route = createFileRoute("/gallery")({
   component: GalleryPage,
@@ -17,6 +18,34 @@ export const Route = createFileRoute("/gallery")({
 });
 
 type Filter = "all" | "pass" | "fail" | "local";
+
+function pieceMeta(p: PelicanPiece) {
+  const slot = parseSlot(p.model);
+  const effort = isEffortAlias(p.model) ? "渠道别名" : EFFORT_LABEL[slot.effort] || slot.effort;
+  return [
+    ["渠道", displayHost(p.host) || "未标明"],
+    ["模型", slot.model],
+    ["思维", effort],
+    ["蹬er", p.rider || (p.local ? "本机游客" : "未署名")],
+  ] as const;
+}
+
+function HoverMeta({ p, className = "" }: { p: PelicanPiece; className?: string }) {
+  return (
+    <div
+      className={`pointer-events-none absolute inset-0 flex items-end bg-gradient-to-t from-bg/95 via-bg/55 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${className}`}
+    >
+      <dl className="grid min-w-0 grid-cols-[2.5rem_1fr] gap-x-2 gap-y-0.5 font-mono text-[11px] leading-5">
+        {pieceMeta(p).map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-faint">{k}</dt>
+            <dd className="min-w-0 truncate text-fg">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 function GalleryPage() {
   const [remote, setRemote] = useState<PelicanPiece[]>([]);
@@ -123,12 +152,20 @@ function GalleryPage() {
                 className="card mt-10 w-full cursor-pointer overflow-hidden p-0 text-left"
               >
                 <div className="grid md:grid-cols-2">
-                  <PelicanLive html={star.html} svg={star.svg} title={star.model} hero />
+                  <div className="group relative min-h-[220px]">
+                    <PelicanLive html={star.html} svg={star.svg} title={star.model} hero />
+                    <HoverMeta p={star} />
+                  </div>
                   <div className="flex flex-col justify-between p-5 sm:p-7">
                     <div>
                       <p className="kicker">馆藏头条</p>
                       <h2 className="mt-2 font-serif text-2xl sm:text-3xl">{star.model}</h2>
                       <p className="mt-2 text-sm text-muted">{displayHost(star.host)}</p>
+                      <p className="mt-1 font-mono text-[11px] text-faint">
+                        {pieceMeta(star)
+                          .map(([k, v]) => `${k} ${v}`)
+                          .join(" · ")}
+                      </p>
                       <p className="mt-4 text-sm leading-6 text-fg/80">{star.detail || "无评语"}</p>
                     </div>
                     <p className="mt-6 font-mono text-xs text-primary">
@@ -154,9 +191,12 @@ function GalleryPage() {
                       setOpen(p);
                     }
                   }}
-                  className="card salon-card cursor-pointer overflow-hidden p-0 text-left transition-transform hover:-translate-y-0.5"
+                  className="group card salon-card cursor-pointer overflow-hidden p-0 text-left transition-transform hover:-translate-y-0.5"
                 >
-                  <PelicanLive html={p.html} svg={p.svg} title={p.model} />
+                  <div className="relative">
+                    <PelicanLive html={p.html} svg={p.svg} title={p.model} />
+                    <HoverMeta p={p} />
+                  </div>
                   <div className="border-t border-border px-3 py-2.5">
                     <p className="truncate text-sm font-medium">{p.model}</p>
                     <p className="mt-0.5 truncate font-mono text-[11px] text-muted">
@@ -193,7 +233,10 @@ function GalleryPage() {
             <div className="p-4 sm:p-5">
               <p className="font-serif text-xl">{open.model}</p>
               <p className="mt-1 text-sm text-muted">
-                {displayHost(open.host)} · {open.score}/14
+                {pieceMeta(open)
+                  .map(([k, v]) => `${k} ${v}`)
+                  .join(" · ")}
+                {open.score ? ` · ${open.score}/14` : ""}
                 {open.local ? " · 本机" : ""}
               </p>
               {open.craft ? <p className="mt-2 font-mono text-xs text-primary">{craftLine(open.craft)}</p> : null}

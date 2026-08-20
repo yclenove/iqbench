@@ -86,6 +86,8 @@ export type BenchRun = {
   benchVer: number;
   maxScore: number;
   models: ModelSnap[];
+  /** 登录用户展示名，画廊/榜用。游客不写。 */
+  rider?: string;
 };
 
 export function hostOf(baseUrl: string) {
@@ -239,7 +241,7 @@ export function makeRun(
   baseUrl: string,
   key: string,
   results: Parameters<typeof compactResults>[0],
-  opts?: { hostPublic?: boolean; id?: string },
+  opts?: { hostPublic?: boolean; id?: string; rider?: string },
 ): BenchRun {
   const raw = hostOf(baseUrl);
   const hostPublic = Boolean(opts?.hostPublic);
@@ -253,6 +255,7 @@ export function makeRun(
     benchVer: BENCH_VER,
     maxScore: MAX_SCORE,
     models: compactResults(results),
+    rider: opts?.rider?.trim() || undefined,
   };
 }
 

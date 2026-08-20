@@ -400,6 +400,17 @@ function appendSlot(prompt: string, hint?: string) {
   return `${prompt}\n\n最后单独一行写答案槽（允许 **加粗**、# 标题、\`代码\`，不要在这一行解释）：\n最终答案: <${hint}>`;
 }
 
+/** 流式等待。色盲/糖果/袜子这类高预算题给足思考空窗，画图另算。 */
+export function streamHold(q: { id: string; timeBudget: number }) {
+  if (q.id === "Q16") {
+    return { timeoutMs: 900_000, idleMs: 180_000, thinkHoldMs: 240_000 };
+  }
+  if (q.timeBudget >= 90) {
+    return { timeoutMs: 720_000, idleMs: 90_000, thinkHoldMs: 300_000 };
+  }
+  return { timeoutMs: 600_000, idleMs: 50_000, thinkHoldMs: 180_000 };
+}
+
 export function instantiateQuestion(q: Question, seed: number): Instantiated {
   if (q.instantiate) {
     const inst = q.instantiate(mulberry32(seed));

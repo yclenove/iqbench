@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { fitGallerySvgs, galleryPaint } from "@/lib/judge";
 
 const SHELL = `
@@ -78,7 +78,7 @@ function PelicanFrame({
   );
 }
 
-const PelicanLive = PelicanFrame;
-const PelicanStill = PelicanFrame;
+const PelicanLive = memo(PelicanFrame);
+const PelicanStill = PelicanLive;
 
 export { PelicanLive, PelicanStill };

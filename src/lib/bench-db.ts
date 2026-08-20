@@ -514,6 +514,7 @@ export const publicPelicanWall = createServerFn({ method: "GET" }).handler(async
           svg: (it.svg || "").slice(0, 80000) || undefined,
           detail: (it.detail || "").slice(0, 200),
           craft: it.craft,
+          rider: run.rider,
         });
       }
     }

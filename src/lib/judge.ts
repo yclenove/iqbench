@@ -72,8 +72,8 @@ export function extractSlot(text: string): { found: boolean; line: string } {
   let last = "";
   let found = false;
   const head =
-    /^(?:最终答案|最后答案|本题答案|final\s*answer)\s*[:：是为]?\s*(.*)$/i;
-  const alt = /^(?:答案)\s*[:：]\s*(.*)$/;
+    /^(?:最终答案|最后答案|本题答案|final\s*answer|the\s+answer\s+is|answer\s+is)\s*[:：是为]?\s*(.*)$/i;
+  const alt = /^(?:答案)\s*[:：是]\s*(.*)$/;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
     const m = line.match(head) || line.match(alt);
@@ -85,7 +85,9 @@ export function extractSlot(text: string): { found: boolean; line: string } {
   }
   if (!found) {
     const loose = [
-      ...plain.matchAll(/(?:最终答案|最后答案|本题答案|final\s*answer)\s*[:：是为]\s*([^\n]+)/gi),
+      ...plain.matchAll(
+        /(?:最终答案|最后答案|本题答案|final\s*answer|the\s+answer\s+is|answer\s+is)\s*[:：是为]?\s*([^\n]+)/gi,
+      ),
     ];
     if (loose.length) {
       found = true;
@@ -232,25 +234,29 @@ function namedScore(
     return { ok, detail: ok ? `中间是${mid}` : `未定位${mid}` };
   }
   if (name === "candy_var") {
-    const blob = slot.found ? focus : body;
-    const hit17 =
-      containsNumber(blob, 17) ||
-      /十七/.test(blob) ||
-      /(?:7\s*[+＋加]\s*10|10\s*[+＋加]\s*7)/.test(blob) ||
-      /(?:7\s*圆.{0,16}10\s*星|10\s*星.{0,16}7\s*圆)/.test(blob);
-    if (hit17 && !negated(blob, "17")) return { ok: true, detail: "按新表算出 17" };
-    if (containsNumber(blob, 25)) {
+    const tail = body.slice(-2000);
+    const hit = (s: string) =>
+      containsNumber(s, 17) ||
+      /十七/.test(s) ||
+      /(?:7\s*[+＋加]\s*10|10\s*[+＋加]\s*7)/.test(s) ||
+      /(?:7\s*圆.{0,16}10\s*星|10\s*星.{0,16}7\s*圆)/.test(s);
+    if ((slot.found && hit(focus) && !negated(focus, "17")) || (hit(tail) && !negated(tail, "17"))) {
+      return { ok: true, detail: "按新表算出 17" };
+    }
+    if ((slot.found && containsNumber(focus, 25)) || containsNumber(tail, 25)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "25 是盲取答案，半分" };
     }
-    if (containsNumber(blob, 21)) {
+    if ((slot.found && containsNumber(focus, 21)) || containsNumber(tail, 21)) {
       return { ok: false, tags: ["疑似套用经典答案"], detail: "答成 21，疑似套用经典题" };
     }
     return { ok: false, detail: "未命中 17" };
   }
   if (name === "candy_classic") {
-    const blob = slot.found ? focus : body;
-    if (containsNumber(blob, 21)) return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
-    if (containsNumber(blob, 29)) {
+    const tail = body.slice(-2000);
+    if ((slot.found && containsNumber(focus, 21)) || containsNumber(tail, 21)) {
+      return { ok: true, detail: "最优 21（9 圆 + 12 星）" };
+    }
+    if ((slot.found && containsNumber(focus, 29)) || containsNumber(tail, 29)) {
       return { ok: false, partial: 0.5, tags: ["替代建模"], detail: "29 是盲取答案，半分" };
     }
     return { ok: false, detail: "未命中 21" };
@@ -301,10 +307,14 @@ export function isGatewayJunk(text: string) {
 export function shortFail(text: string) {
   const s = (text || "").trim();
   if (!s) return "无作答";
+  if (/HTTP\s*502|Bad Gateway/i.test(s)) return "渠道 502（网关挂了，不是模型答错）";
+  if (/HTTP\s*503|Service Unavailable/i.test(s)) return "渠道 503（上游不可用）";
   if (/524/.test(s)) return "网关 524 超时";
+  if (/HTTP\s*504|Gateway Timeout/i.test(s)) return "渠道 504 超时";
   if (/upstream_saturated|并发上限|饱和/.test(s)) return "上游饱和";
-  if (/超时|timeout/i.test(s)) return "超时无产出";
-  if (isGatewayJunk(s) || /<!DOCTYPE html|<html[\s>]/i.test(s)) return "网关错误页，不是 SVG";
+  if (/GoUsageLimitError|Monthly usage limit|usage limit reached/i.test(s)) return "OpenCode 月额度用完（不是 502）";
+  if (isGatewayJunk(s)) return "渠道网关错误页（不是模型答案）";
+  if (/<!DOCTYPE html|<html[\s>]/i.test(s) && !/<svg\b/i.test(s)) return "返回了网页而不是答案";
   return s.replace(/\s+/g, " ").slice(0, 140);
 }
 
@@ -386,18 +396,38 @@ export function gallerySrcDoc(html?: string, svg?: string) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${paint}</body></html>`;
 }
 
-/** 正文被 length / 断流截断。不要把数学里的 < 或 LaTeX 花括号当成半截 HTML。 */
+/** 正文被 length / 断流截断。完整 SVG 即使 finish=error 也不算半截。 */
 export function looksTruncated(text: string, finishReason?: string) {
-  if (finishReason === "length" || finishReason === "max_tokens" || finishReason === "error") return true;
   const s = (text || "").trim();
+  if (/<svg\b/i.test(s) && /<\/svg>/i.test(s)) return false;
+  if (finishReason === "length" || finishReason === "max_tokens" || finishReason === "error") return true;
   if (!s) return false;
   if (/<svg\b/i.test(s) && !/<\/svg>/i.test(s)) return true;
-  if (/<!doctype html|<html[\s>]/i.test(s) && !/<\/html>/i.test(s)) return true;
+  if (/<!doctype html|<html[\s>]/i.test(s) && !/<\/html>/i.test(s) && /<svg\b/i.test(s)) return true;
   if (/<(?:path|g|polygon|polyline|style|script|div|body)\b[^>]*$/i.test(s)) return true;
   const opens = (s.match(/\{/g) || []).length;
   const closes = (s.match(/\}/g) || []).length;
   if (opens > closes + 2 && /\{[^{}]{0,40}$/.test(s)) return true;
   return false;
+}
+
+export function isOpenDraw(text: string) {
+  const s = text || "";
+  if (/<svg\b/i.test(s) && !/<\/svg>/i.test(s)) return true;
+  if (/<!doctype html|<html[\s>]/i.test(s) && /<svg\b/i.test(s) && !/<\/html>/i.test(s)) return true;
+  return false;
+}
+
+/** 把续写接到半截 HTML/SVG 后面。续写若是完整新文档则用新的。 */
+export function stitchDraw(head: string, tail: string) {
+  const h = (head || "").trim();
+  const t = (tail || "")
+    .trim()
+    .replace(/^```(?:html|xml|svg)?\s*/i, "")
+    .replace(/```\s*$/i, "");
+  if (!t) return h;
+  if (/<svg\b/i.test(t) && /<\/svg>/i.test(t) && t.length >= h.length * 0.6) return t;
+  return `${h}${t.startsWith("<") ? "" : "\n"}${t}`;
 }
 
 /** 正文被掐时用思维链；半截思考也比空答更接近真实水平。Q17 在调用方排除。 */

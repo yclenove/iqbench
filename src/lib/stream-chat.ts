@@ -62,6 +62,7 @@ export function isRetryable(err: unknown, signal?: AbortSignal) {
     return true;
   }
   if (isServerBlip(err)) return true;
+  if (/GoUsageLimitError|Monthly usage limit|usage limit reached/i.test(msg)) return false;
   return /HTTP 408|HTTP 429|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络|aborted|AbortError|空完成|无 output_text/i.test(
     msg,
   );
@@ -72,7 +73,7 @@ function retryWait(err: unknown, attempt: number) {
   if (/HTTP 429/.test(msg)) return Math.min(16000, 2000 * 2 ** (attempt - 1));
   if (/upstream_saturated|并发上限|饱和/.test(msg)) return Math.min(12000, 2000 * 2 ** (attempt - 1));
   if (/\b500\b|Internal Server Error/.test(msg)) return Math.min(8000, 1000 * 2 ** (attempt - 1));
-  if (isGateway(err)) return 400;
+  if (isGateway(err)) return Math.min(2500, 800 * 2 ** (attempt - 1));
   return Math.min(2000, 400 * 2 ** (attempt - 1));
 }
 
@@ -100,11 +101,22 @@ async function streamChatOnce(input: StreamChatInput) {
   const thinkHoldMs = input.thinkHoldMs ?? 180_000;
   const idleCtrl = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let idleFired = false;
   const acc = { content: "", reasoning: "" };
+  const stillDraw = () => {
+    const s = acc.content + acc.reasoning;
+    return /<svg\b/i.test(s) && !/<\/svg>/i.test(s);
+  };
+  const mostlyThink = () =>
+    !acc.content.trim() || (acc.reasoning.length > 80 && acc.content.trim().length < 80);
   const bumpIdle = () => {
     if (idleTimer) clearTimeout(idleTimer);
-    const wait = acc.content ? idleMs : thinkHoldMs;
-    idleTimer = setTimeout(() => idleCtrl.abort(), wait);
+    idleFired = false;
+    const wait = stillDraw() || mostlyThink() ? thinkHoldMs : idleMs;
+    idleTimer = setTimeout(() => {
+      idleFired = true;
+      idleCtrl.abort();
+    }, wait);
   };
   bumpIdle();
   const parts = [AbortSignal.timeout(hardMs), idleCtrl.signal];
@@ -176,7 +188,12 @@ async function streamChatOnce(input: StreamChatInput) {
       }
     } catch (e) {
       if (acc.content || acc.reasoning) {
-        return { content: acc.content, reasoning: acc.reasoning, finish: finish || "error" };
+        const why = idleFired
+          ? "idle"
+          : e instanceof DOMException && e.name === "TimeoutError"
+            ? "timeout"
+            : finish || "error";
+        return { content: acc.content, reasoning: acc.reasoning, finish: why };
       }
       throw e;
     }
@@ -198,10 +215,13 @@ export async function streamChat(input: StreamChatInput) {
       return await streamChatOnce(input);
     } catch (err) {
       lastErr = err;
-      const gatewayCap = isGateway(err) && attempt >= 2;
-      if (!isRetryable(err, input.signal) || attempt === max || gatewayCap) throw err;
+      const msg = errText(err);
+      const hardGateway = /HTTP 524|524:/.test(msg);
+      const gatewayCap = hardGateway && attempt >= 2;
+      const blipCap = isGateway(err) && !hardGateway && attempt >= 3;
+      if (!isRetryable(err, input.signal) || attempt === max || gatewayCap || blipCap) throw err;
       const wait = retryWait(err, attempt);
-      input.onRetry?.(attempt, isGateway(err) ? 2 : max, `${errText(err)} · ${wait}ms 后`);
+      input.onRetry?.(attempt, hardGateway ? 2 : isGateway(err) ? 3 : max, `${errText(err)} · ${wait}ms 后`);
       await sleep(wait, input.signal);
     }
   }

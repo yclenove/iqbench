@@ -27,24 +27,30 @@ function asEffort(v: unknown): Effort | null {
 
 const ORDER: Effort[] = ["max", "xhigh", "high", "medium", "low", "minimal", "none"];
 
-function merge(a: ModelSpec | undefined, b: ModelSpec): ModelSpec {
-  if (!a) return b;
-  const seen = new Set<Effort>([...a.efforts, ...b.efforts]);
-  return {
-    reasoning: a.reasoning || b.reasoning,
-    context: Math.max(a.context, b.context),
-    output: Math.max(a.output, b.output),
-    efforts: ORDER.filter((e) => seen.has(e)),
-  };
-}
-
-function put(idx: SpecIndex, k: string, spec: ModelSpec) {
-  if (!k) return;
-  idx[k] = merge(idx[k], spec);
+function voteEfforts(lists: Effort[][]): Effort[] {
+  const nonempty = lists.filter((l) => l.length);
+  if (!nonempty.length) return [];
+  const n = nonempty.length;
+  const count = new Map<Effort, number>();
+  for (const list of nonempty) {
+    for (const e of new Set(list)) count.set(e, (count.get(e) || 0) + 1);
+  }
+  const picked = ORDER.filter((e) => (count.get(e) || 0) * 2 >= n);
+  return picked.length ? picked : nonempty.sort((a, b) => b.length - a.length)[0]!;
 }
 
 export function compactCatalog(raw: Record<string, { models?: Record<string, Record<string, unknown>> }>) {
-  const idx: SpecIndex = {};
+  type Bag = { lists: Effort[][]; context: number; output: number; reasoning: boolean };
+  const bags: Record<string, Bag> = {};
+  const add = (k: string, spec: ModelSpec) => {
+    if (!k) return;
+    const b = bags[k] || { lists: [], context: 0, output: 0, reasoning: false };
+    if (spec.efforts.length) b.lists.push(spec.efforts);
+    b.context = Math.max(b.context, spec.context);
+    b.output = Math.max(b.output, spec.output);
+    b.reasoning = b.reasoning || spec.reasoning;
+    bags[k] = b;
+  };
   for (const p of Object.values(raw || {})) {
     const models = p?.models || {};
     for (const [mid, m] of Object.entries(models)) {
@@ -71,10 +77,17 @@ export function compactCatalog(raw: Record<string, { models?: Record<string, Rec
         output: Number(limit.output) || 0,
       };
       const id = String(m.id || mid);
-      for (const k of new Set([keyOf(id), keyOf(mid), loose(id), loose(mid)])) {
-        put(idx, k, spec);
-      }
+      for (const k of new Set([keyOf(id), keyOf(mid), loose(id), loose(mid)])) add(k, spec);
     }
+  }
+  const idx: SpecIndex = {};
+  for (const [k, b] of Object.entries(bags)) {
+    idx[k] = {
+      efforts: voteEfforts(b.lists),
+      context: b.context,
+      output: b.output,
+      reasoning: b.reasoning,
+    };
   }
   return idx;
 }

@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 import { QUESTIONS } from "@/lib/questions";
 import type { PublicChannelRow, PublicDimRow, PublicModelRow, PublicPairRow, PublicUserRow } from "@/lib/bench-db";
+
+const BoardCharts = lazy(() => import("@/components/board-charts").then((m) => ({ default: m.BoardCharts })));
 
 const headCell = "border-b border-border pb-2 pr-3 text-left font-medium";
 const cell = "py-2.5 pr-3 align-top";
@@ -69,6 +71,48 @@ function Lift({ n }: { n: number | null }) {
   );
 }
 
+export function BoardOverview({
+  models,
+  channels,
+  dims,
+}: {
+  models: PublicModelRow[];
+  channels: PublicChannelRow[];
+  dims: PublicDimRow[];
+}) {
+  const s = boardInsights(models, channels);
+  return (
+    <div className="grid gap-4">
+      <section className="card p-4 sm:p-5">
+        <p className="kicker mb-2">怎么读</p>
+        <ul className="grid gap-1.5 text-sm text-muted sm:grid-cols-2">
+          <li>
+            <span className="text-fg">模型榜</span> 看中位 IQ。一次高分当不了第一，一半成绩在这条线以上才算稳。
+          </li>
+          <li>
+            <span className="text-fg">渠道榜</span> 看增益：同一模型在这家比全网高还是低。不是「谁测的模型更强」。
+          </li>
+          <li>
+            <span className="text-fg">蹬er</span> 登录用户贡献。游客只留本机，不上公开榜。
+          </li>
+          <li>
+            <span className="text-fg">55–145</span> 是卷面映射，不是韦氏智商。全对约 145，对一半约 100。
+          </li>
+        </ul>
+      </section>
+      <InsightStrip models={models} channels={channels} />
+      <Suspense fallback={<p className="text-sm text-muted">图加载中…</p>}>
+        <BoardCharts models={models} channels={channels} dims={dims} />
+      </Suspense>
+      {s.leader ? (
+        <p className="text-center font-mono text-[11px] text-faint">
+          图只画公开样本。点上面「模型 / 渠道」看完整表。
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function InsightStrip({
   models,
   channels,
@@ -123,7 +167,7 @@ export function PublicModelTable({
   return (
     <CardShell
       title="模型总榜"
-      hint="主排序用中位 IQ。最近是该模型最后一场的分数，方便看有没有掉。"
+      hint="点模型名看它在各渠道的对照。中位是主排名；分布条是 P25 到巅峰，圆点是中位。"
       empty="公开榜还是空的"
     >
       {rows.length === 0 ? null : (
@@ -150,23 +194,18 @@ export function PublicModelTable({
             ))}
           </div>
           <div className="-mx-1 overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="font-mono text-[11px] tracking-wider text-muted uppercase">
                   <th className={headCell}>#</th>
                   <th className={headCell}>模型</th>
-                  <th className={headCell}>中位</th>
-                  <th className={headCell}>最近</th>
+                  <th className={headCell}>中位 IQ</th>
                   <th className={headCell}>分布</th>
-                  <th className={headCell}>巅峰</th>
-                  <th className={headCell}>前三渠道</th>
                   <th className={headCell}>样本</th>
                 </tr>
               </thead>
               <tbody>
-                {ordered.map((r, i) => {
-                  const hosts = topHostsFor(pairs, r.model, 3);
-                  return (
+                {ordered.map((r, i) => (
                     <tr key={r.model} className="border-b border-border/50 last:border-0 hover:bg-surface-2/40">
                       <td className={`${cell} font-mono text-primary`}>{i + 1}</td>
                       <td className={`${cell} font-medium`}>
@@ -180,43 +219,19 @@ export function PublicModelTable({
                       <td className={`${cell} tabular-nums`}>
                         <span className="font-serif text-lg font-bold text-primary">{r.med_iq}</span>
                       </td>
-                      <td
-                        className={`${cell} tabular-nums ${r.last_iq + 8 < r.med_iq ? "text-bad" : r.last_iq > r.med_iq + 4 ? "text-ok" : "text-muted"}`}
-                        title="该模型最近一场 IQ"
-                      >
-                        {r.last_iq}
-                      </td>
                       <td className={cell}>
                         <IqRange p25={r.p25_iq} med={r.med_iq} best={r.best_iq} />
                         <p className="mt-1 font-mono text-[10px] text-faint">
-                          {r.p25_iq}–{r.best_iq}
+                          P25 {r.p25_iq} · 巅 {r.best_iq}
+                          {r.last_iq ? ` · 近 ${r.last_iq}` : ""}
                         </p>
-                      </td>
-                      <td className={`${cell} tabular-nums text-muted`}>{r.best_iq}</td>
-                      <td className={cell}>
-                        {hosts.length === 0 ? (
-                          <span className="text-faint">—</span>
-                        ) : (
-                          <ul className="flex flex-col gap-1">
-                            {hosts.map((h, idx) => (
-                              <li key={h.host} className="flex min-w-0 items-baseline gap-2 text-xs">
-                                <span className="font-mono text-[10px] text-faint">{idx + 1}</span>
-                                <span className="min-w-0 truncate" title={h.host}>
-                                  {h.host}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-primary">{h.med_iq}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
                       </td>
                       <td className={`${cell} tabular-nums`}>
                         {r.runs}
                         <span className="ml-1 text-[10px] text-faint">{r.hosts}渠</span>
                       </td>
                     </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
