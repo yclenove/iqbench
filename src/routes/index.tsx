@@ -43,6 +43,7 @@ import {
   loadDraft,
   missingJobs,
   retryableJobs,
+  lowScoreJobs,
   runGaps,
   writeDraft,
   type BenchDraft,
@@ -469,7 +470,7 @@ function Home() {
     setDraft(loadDraft());
   }
 
-  async function run(opts?: { resume?: boolean; retryFailed?: boolean; fromRun?: BenchRun }) {
+  async function run(opts?: { resume?: boolean; retryFailed?: boolean; retryLow?: boolean; fromRun?: BenchRun }) {
     let modelIds = selected;
     let nextResults: Record<string, ModelResult> = {};
     let jobList: Job[] = [];
@@ -520,6 +521,14 @@ function Home() {
       draftIdRef.current = draft.id;
       jobList = missingJobs(nextResults, modelIds);
       if (!jobList.length) jobList = retryableJobs(nextResults, modelIds);
+    } else if (opts?.retryLow) {
+      nextResults = { ...results };
+      modelIds = Object.keys(nextResults);
+      jobList = lowScoreJobs(nextResults, modelIds);
+      if (!jobList.length) {
+        append("没有未通过的低分题");
+        return;
+      }
     } else if (opts?.retryFailed) {
       nextResults = { ...results };
       modelIds = Object.keys(nextResults);
@@ -574,7 +583,7 @@ function Home() {
     setResults({ ...nextResults });
     snapDraft(modelIds, nextResults);
     append(
-      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : ""}，${nWorkers} 路并行 · 出战 ${modelIds.length} · bench v7`,
+      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : opts?.retryLow ? "（重测低分）" : ""}，${nWorkers} 路并行 · 出战 ${modelIds.length} · bench v7`,
     );
 
     const ac = new AbortController();
@@ -591,7 +600,8 @@ function Home() {
         const inst = instantiateQuestion(q, seed);
         const tag = `${model}/${q.id}`;
         append(`→ ${tag} ${q.title}${q.parametric ? ` [${inst.label}]` : ""}`);
-        paintLive(tag, "连接中…");
+        async function attemptOnce(round: string) {
+        paintLive(tag, round === "低分重试" ? "低分重试…" : "连接中…");
         const t0 = performance.now();
         let content = "";
         let preview = "";
@@ -624,7 +634,7 @@ function Home() {
           const thoughtLen = (resp.reasoning || "").trim().length;
           let thoughtBank = (resp.reasoning || "").trim();
           traceLines.push(
-            `第1次 finish=${resp.finish || "stop"} 正文${bodyLen}字 思考${thoughtLen}字${cutHint(resp, q.id)}`,
+            `${round} finish=${resp.finish || "stop"} 正文${bodyLen}字 思考${thoughtLen}字${cutHint(resp, q.id)}`,
           );
           let picked = pickVisibleAnswer(resp.content || "", resp.reasoning || "", resp.finish);
           if (q.id === "Q17" && picked.from === "thought") {
@@ -803,10 +813,47 @@ function Home() {
         }
         const dt = (performance.now() - t0) / 1000;
         const failTag = emptyFailTag(preview);
-        const trace = traceLines.filter(Boolean).join("\n");
         const judged = content
           ? judgeItem(q, content, dt, inst.judge)
           : { ok: false, score: 0, accuracy: 0, speedFactor: 0, detail: preview || failTag, tags: [failTag] };
+        return {
+          content,
+          preview,
+          judged,
+          dt,
+          traceLines,
+          aborted: preview === "已停止",
+        };
+        }
+
+        let snap = await attemptOnce("第1次");
+        if (
+          !stopRef.current &&
+          !opts?.retryLow &&
+          !opts?.retryFailed &&
+          !snap.aborted &&
+          !(snap.judged.accuracy || snap.judged.score)
+        ) {
+          append(`  ${tag} 0 分，低分重试`);
+          const again = await attemptOnce("低分重试");
+          const better =
+            (again.judged.accuracy || 0) > (snap.judged.accuracy || 0) ||
+            ((again.judged.accuracy || 0) === (snap.judged.accuracy || 0) &&
+              (again.judged.score || 0) > (snap.judged.score || 0));
+          if (better && !again.aborted) {
+            append(`  ${tag} 低分重试 ${snap.judged.score}→${again.judged.score}，留下重试`);
+            snap = {
+              ...again,
+              traceLines: [...snap.traceLines, ...again.traceLines],
+            };
+          } else {
+            append(`  ${tag} 低分重试未超过（${again.judged.score}），留第一次`);
+            snap.traceLines.push(...again.traceLines, "低分重试未超过，留第一次");
+          }
+        }
+        const { content, preview, judged, dt, traceLines } = snap;
+        const failTag = emptyFailTag(preview);
+        const trace = traceLines.filter(Boolean).join("\n");
         const write = (id: string, j: typeof judged, more?: Partial<ItemResult>) => {
           bucket.items[id] = {
             ok: j.ok,
@@ -875,7 +922,7 @@ function Home() {
 
     await Promise.all(Array.from({ length: Math.min(nWorkers, jobs.length) }, () => worker()));
 
-    const skipProbe = Boolean(opts?.retryFailed);
+    const skipProbe = Boolean(opts?.retryFailed || opts?.retryLow);
     if (probeOn && !stopRef.current && !skipProbe) {
       setStatus("渠道鉴定中…");
       const age = ladderAgeDays();
@@ -1374,6 +1421,15 @@ function Home() {
                 className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm font-medium transition-colors hover:border-primary sm:w-auto sm:px-4"
               >
                 {draft && missingJobs(results, Object.keys(results)).length ? "续测" : "重测失败题"}
+              </button>
+            ) : null}
+            {!running && lowScoreJobs(results, Object.keys(results)).length ? (
+              <button
+                type="button"
+                onClick={() => void run({ retryLow: true })}
+                className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm font-medium transition-colors hover:border-primary sm:w-auto sm:px-4"
+              >
+                重测低分题
               </button>
             ) : null}
             {running ? (

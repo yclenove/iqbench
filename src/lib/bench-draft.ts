@@ -94,6 +94,25 @@ export function retryableJobs(
   return jobs;
 }
 
+export function lowScoreJobs(
+  results: Record<string, { items: Record<string, { ok: boolean; score?: number; accuracy?: number }> }>,
+  models: string[],
+): Job[] {
+  const jobs: Job[] = [];
+  for (const model of models) {
+    const items = results[model]?.items || {};
+    for (const q of QUESTIONS.items) {
+      const it = q.id === "Q16" ? items.Q16a || items.Q16 : items[q.id];
+      if (!it || it.ok) continue;
+      const got =
+        q.id === "Q16" ? (items.Q16a?.score || 0) + (items.Q16b?.score || 0) : Number(it.score || 0);
+      if (got >= q.score) continue;
+      jobs.push({ model, qid: q.id });
+    }
+  }
+  return jobs;
+}
+
 export function draftSummary(d: BenchDraft) {
   const mapped: Record<string, { items: Record<string, { ok: boolean; detail?: string }> }> = {};
   for (const m of d.results) mapped[m.id] = { items: m.items };
