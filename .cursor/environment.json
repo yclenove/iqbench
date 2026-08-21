@@ -1,0 +1,17 @@
+{
+  "name": "iqbench",
+  "install": "npm install",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev",
+      "description": "Vite dev server (TanStack Start) on http://localhost:8080. PGLite applies migrations on boot, so no DATABASE_URL is required. API keys are entered in the browser at runtime."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 8080
+    }
+  ]
+}
