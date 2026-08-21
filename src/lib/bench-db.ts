@@ -127,25 +127,35 @@ export const saveCloudRun = createServerFn({ method: "POST" })
   .validator((run: BenchRun) => run)
   .handler(async ({ context, data: run }) => {
     if (run.benchVer !== BENCH_VER) return { ok: false as const };
-    const complete = run.models.every((m) => UNITS.every((u) => m.items[u.id]));
-    if (!complete) return { ok: false as const, reason: "incomplete" as const };
+    const models = run.models.filter((m) => UNITS.every((u) => m.items[u.id]));
+    if (!models.length) return { ok: false as const, reason: "incomplete" as const };
     const sql = await getSql();
     const host = publishHost(run.host, run.hostPublic === true);
-    const safe: BenchRun = { ...run, host, keyHint: "已隐藏", hostPublic: run.hostPublic === true };
+    const safe: BenchRun = { ...run, models, host, keyHint: "已隐藏", hostPublic: run.hostPublic === true };
     await sql.query(
       `insert into bench_runs (id, user_id, host, key_fp, bench_ver, payload)
        values ($1, $2, $3, $4, $5, $6::jsonb)
-       on conflict (id) do nothing`,
+       on conflict (id) do update set
+         payload = excluded.payload,
+         host = excluded.host,
+         key_fp = excluded.key_fp
+       where bench_runs.user_id = $2`,
       [run.id, context.userId, host, run.keyFp, run.benchVer, JSON.stringify(safe)],
     );
-    for (const m of run.models) {
+    for (const m of models) {
       const iq = modelIq(m.items).iq;
       await sql.query(
         `insert into bench_public_scores
           (id, user_id, host, model, iq, score, max_score, seconds,
            freshness, juice, web_suspect, iq_suspect, dims)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
-         on conflict (id) do nothing`,
+         on conflict (id) do update set
+           freshness = excluded.freshness,
+           juice = excluded.juice,
+           web_suspect = excluded.web_suspect,
+           iq_suspect = excluded.iq_suspect,
+           host = excluded.host
+         where bench_public_scores.user_id = $2`,
         [
           `${run.id}:${m.id}`,
           context.userId,

@@ -20,6 +20,17 @@ export type StreamChatInput = {
   onRetry?: (attempt: number, max: number, reason: string) => void;
 };
 
+function asText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.content === "string") return o.content;
+    if (typeof o.text === "string") return o.text;
+    if (typeof o.summary === "string") return o.summary;
+  }
+  return "";
+}
+
 function takeDelta(obj: Record<string, unknown>) {
   const err = obj.error;
   if (typeof err === "string" && err.trim()) throw new Error(err.trim());
@@ -30,11 +41,16 @@ function takeDelta(obj: Record<string, unknown>) {
   }
   const choices = obj.choices as Array<Record<string, unknown>> | undefined;
   const ch0 = choices?.[0] ?? {};
-  const delta = (ch0.delta as Record<string, string> | undefined) ?? {};
-  const message = (ch0.message as Record<string, string> | undefined) ?? {};
+  const delta = (ch0.delta as Record<string, unknown> | undefined) ?? {};
+  const message = (ch0.message as Record<string, unknown> | undefined) ?? {};
   return {
-    content: delta.content || message.content || "",
-    reasoning: delta.reasoning_content || message.reasoning_content || "",
+    content: asText(delta.content) || asText(message.content) || "",
+    reasoning:
+      asText(delta.reasoning_content) ||
+      asText(delta.reasoning) ||
+      asText(message.reasoning_content) ||
+      asText(message.reasoning) ||
+      "",
     finish: String(ch0.finish_reason || obj.finish_reason || ""),
   };
 }
@@ -57,10 +73,9 @@ function isServerBlip(err: unknown) {
 export function isRetryable(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return false;
   const msg = errText(err);
+  if (err instanceof DOMException && err.name === "AbortError") return false;
   if (err instanceof TypeError) return true;
-  if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
-    return true;
-  }
+  if (err instanceof DOMException && err.name === "TimeoutError") return true;
   if (isServerBlip(err)) return true;
   if (/GoUsageLimitError|Monthly usage limit|usage limit reached/i.test(msg)) return false;
   return /HTTP 408|HTTP 429|upstream_saturated|并发上限|饱和|Failed to fetch|fetch failed|NetworkError|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|timeout|超时|网络|aborted|AbortError|空完成|无 output_text/i.test(
@@ -161,6 +176,7 @@ async function streamChatOnce(input: StreamChatInput) {
     let finish = "";
 
     try {
+      let sawDone = false;
       while (true) {
         const { done, value } = await reader.read();
         bumpIdle();
@@ -172,21 +188,35 @@ async function streamChatOnce(input: StreamChatInput) {
           const trimmed = line.trim();
           if (!trimmed.startsWith("data:")) continue;
           const data = trimmed.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
+          if (!data) continue;
+          if (data === "[DONE]") {
+            sawDone = true;
+            finish = finish || "stop";
+            continue;
+          }
           try {
             const obj = JSON.parse(data) as Record<string, unknown>;
             const d = takeDelta(obj);
             if (d.content) acc.content += d.content;
             if (d.reasoning) acc.reasoning += d.reasoning;
-            if (d.finish) finish = d.finish;
+            if (d.finish && d.finish !== "null") finish = d.finish;
             if (d.content || d.reasoning) bumpIdle();
             input.onDelta?.({ content: acc.content, reasoning: acc.reasoning });
           } catch {
             /* keep-alive */
           }
         }
+        if (sawDone || finish === "stop" || finish === "length" || finish === "max_tokens") {
+          try {
+            await reader.cancel();
+          } catch {
+            /* already closed */
+          }
+          break;
+        }
       }
     } catch (e) {
+      if (input.signal?.aborted) throw e;
       if (acc.content || acc.reasoning) {
         const why = idleFired
           ? "idle"
@@ -229,13 +259,15 @@ export async function streamChat(input: StreamChatInput) {
 }
 
 /** 非流式调用的通用重试（拉模型列表 / 云同步 / 对照拉取）。默认 3 次，0.8s/1.6s 退避 */
-export async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, tries = 3, signal?: AbortSignal): Promise<T> {
   let lastErr: unknown = new Error("未知错误");
   for (let attempt = 1; attempt <= tries; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
       return await fn();
     } catch (err) {
       lastErr = err;
+      if (signal?.aborted) throw err;
       if (attempt === tries) break;
       await new Promise((r) => setTimeout(r, Math.min(4000, 800 * 2 ** (attempt - 1))));
     }

@@ -170,13 +170,13 @@ export function buildReportHtml(
         <td>${esc(p.freshness ?? "未知")}</td>
         <td class="num">${p.correct}/${p.total}</td>
         <td class="num">${p.juice.value != null ? p.juice.value : "无"}</td>
-        <td>${esc(p.identity || "—")}</td>
+        <td>${esc(p.identity ? `${p.identity}（无实证）` : "—")}</td>
         <td>${esc(flags)}</td>
       </tr>`;
     })
     .join("");
   const probeTable = `<table>
-      <thead><tr><th>模型</th><th>知识截止</th><th>阶梯答对</th><th>juice</th><th>自称</th><th>备注</th></tr></thead>
+      <thead><tr><th>模型</th><th>知识截止</th><th>阶梯答对</th><th>juice</th><th>自称（无实证）</th><th>备注</th></tr></thead>
       <tbody>${probeRows}</tbody>
     </table>`;
 

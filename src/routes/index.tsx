@@ -175,6 +175,7 @@ function Home() {
   const [running, setRunning] = useState(false);
   const stopRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const lastRunIdRef = useRef("");
   const [results, setResults] = useState<Record<string, ModelResult>>({});
   const [liveJobs, setLiveJobs] = useState<Record<string, string>>({});
   const liveBuf = useRef<Record<string, string>>({});
@@ -470,7 +471,13 @@ function Home() {
     setDraft(loadDraft());
   }
 
-  async function run(opts?: { resume?: boolean; retryFailed?: boolean; retryLow?: boolean; fromRun?: BenchRun }) {
+  async function run(opts?: {
+    resume?: boolean;
+    retryFailed?: boolean;
+    retryLow?: boolean;
+    retryProbe?: boolean;
+    fromRun?: BenchRun;
+  }) {
     let modelIds = selected;
     let nextResults: Record<string, ModelResult> = {};
     let jobList: Job[] = [];
@@ -521,6 +528,23 @@ function Home() {
       draftIdRef.current = draft.id;
       jobList = missingJobs(nextResults, modelIds);
       if (!jobList.length) jobList = retryableJobs(nextResults, modelIds);
+    } else if (opts?.retryProbe) {
+      nextResults = { ...results };
+      modelIds = Object.keys(nextResults);
+      if (!modelIds.length) {
+        append("先跑完测评再鉴定");
+        return;
+      }
+      jobList = [];
+      for (const id of modelIds) {
+        const cur = nextResults[id];
+        if (!cur) continue;
+        nextResults[id] = { ...cur, probe: undefined, probeProgress: undefined };
+      }
+      setResults({ ...nextResults });
+      append(
+        "重跑鉴定覆盖规则：IQ/卷面/鹈鹕不动；知识截止、juice、自称、联网嫌疑整表换成新结果；同一场本机覆盖；公开榜只改鉴定字段。降智对照按此刻全网分布重刷。",
+      );
     } else if (opts?.retryLow) {
       nextResults = { ...results };
       modelIds = Object.keys(nextResults);
@@ -560,7 +584,7 @@ function Home() {
       .map((j) => ({ model: j.model, q: QUESTIONS.items.find((q) => q.id === j.qid) }))
       .filter((j): j is { model: string; q: (typeof QUESTIONS.items)[number] } => Boolean(j.q));
 
-    if (!jobs.length && !(probeOn && !opts?.retryFailed)) {
+    if (!jobs.length && !opts?.retryProbe) {
       append("没有待跑的题");
       return;
     }
@@ -583,9 +607,11 @@ function Home() {
     setResults({ ...nextResults });
     snapDraft(modelIds, nextResults);
     append(
-      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : opts?.retryLow ? "（重测低分）" : ""}，${nWorkers} 路并行 · 出战 ${modelIds.length} · bench v7`,
+      `共 ${jobs.length} 题${opts?.resume ? "（续测）" : opts?.retryFailed ? "（重试失败题）" : opts?.retryLow ? "（重测低分）" : opts?.retryProbe ? "（重跑鉴定）" : ""}，${nWorkers} 路并行 · 出战 ${modelIds.length} · bench v7`,
     );
 
+    let leftover: Job[] = [];
+    try {
     const ac = new AbortController();
     abortRef.current = ac;
     let cursor = 0;
@@ -923,15 +949,15 @@ function Home() {
     await Promise.all(Array.from({ length: Math.min(nWorkers, jobs.length) }, () => worker()));
 
     const skipProbe = Boolean(opts?.retryFailed || opts?.retryLow);
-    if (probeOn && !stopRef.current && !skipProbe) {
+    if ((probeOn || opts?.retryProbe) && !stopRef.current && !skipProbe) {
       setStatus("渠道鉴定中…");
       const age = ladderAgeDays();
       if (age > 90) {
         append(`  ⚠ 知识阶梯最新条目距今 ${age} 天，联网探测已失效，建议在 src/lib/probes.ts 补新事件`);
       }
-      const probeModels = modelIds.filter((m) => !nextResults[m]?.probe);
+      const probeModels = opts?.retryProbe ? modelIds : modelIds.filter((m) => !nextResults[m]?.probe);
       if (!probeModels.length) {
-        append("渠道鉴定已有存档，跳过");
+        append("渠道鉴定已有存档，跳过（可点「重跑鉴定」）");
       } else {
       append(
         `渠道鉴定（不计分）：${KNOWLEDGE_LADDER.length} 问知识阶梯 + juice + 身份；已做过的不重跑`,
@@ -964,12 +990,14 @@ function Home() {
             },
           });
           return (resp.content || "").trim() ? resp.content : resp.reasoning || "";
-        } catch {
+        } catch (e) {
+          if (stopRef.current || (e instanceof DOMException && e.name === "AbortError")) throw e;
           return "";
         }
       }
 
       async function probeWorker() {
+        try {
         while (probeCursor < probeModels.length && !stopRef.current) {
           const model = probeModels[probeCursor];
           probeCursor += 1;
@@ -1011,18 +1039,24 @@ function Home() {
           paintLive(tag, null);
           append(`  ${model} 鉴定完成：${probeLine(probe)}`);
         }
+        } catch (e) {
+          if (stopRef.current || (e instanceof DOMException && e.name === "AbortError")) return;
+          throw e;
+        }
       }
 
       await Promise.all(
         Array.from({ length: Math.min(nWorkers, probeModels.length) }, () => probeWorker()),
       );
+      append("渠道鉴定结束");
+      setStatus("鉴定结束，对照中…");
       }
     }
 
     // 降智对照：跟全网同名模型的历史分布比（先比后传，本次成绩不掺进基线）
     if (!stopRef.current) {
       try {
-        const base = await withRetry(() => modelBaselines({ data: modelIds }), 2);
+        const base = await withRetry(() => modelBaselines({ data: modelIds }), 2, ac.signal);
         for (const b of base) {
           const bucket = nextResults[b.model];
           if (!bucket || b.runs < 3) continue;
@@ -1037,7 +1071,7 @@ function Home() {
       }
     }
 
-    let leftover: Job[] = [];
+    leftover = [];
     try {
       leftover = missingJobs(nextResults, modelIds);
     } catch {
@@ -1046,32 +1080,45 @@ function Home() {
     if (Object.keys(nextResults).length) {
       const finished = makeRun(baseUrl, apiKey, nextResults, {
         hostPublic,
-        id: draftIdRef.current || undefined,
+        id: lastRunIdRef.current || draftIdRef.current || undefined,
         rider: userRef.current?.displayName || undefined,
       });
+      lastRunIdRef.current = finished.id;
+      draftIdRef.current = finished.id;
       saveRun(finished);
       setHistTick((n) => n + 1);
+      if (userRef.current) {
+        withRetry(() => saveCloudRun({ data: finished }))
+          .then((r) => {
+            if (r && "ok" in r && r.ok) append("已写入公开榜");
+            else append("公开榜未收（没有完整模型，或未登录）");
+          })
+          .catch((err) => append(`公开榜同步失败：${err instanceof Error ? err.message : "未知错误"}`));
+      } else {
+        append("未登录，本场只留本机。登录（L站 / Google / X）后才会上公开榜");
+      }
       if (leftover.length || stopRef.current) {
         snapDraft(modelIds, nextResults);
         append(`未完成，已存草稿（还剩 ${leftover.length} 题）。刷新后可续测。`);
       } else {
         clearDraft();
         setDraft(null);
-        draftIdRef.current = "";
-        if (userRef.current) {
-          withRetry(() => saveCloudRun({ data: finished }))
-            .then(() => append("已写入公开榜"))
-            .catch((err) => append(`公开榜同步失败：${err instanceof Error ? err.message : "未知错误"}`));
-        } else {
-          append("未登录，本场只留本机。登录（L站 / Google / X）后才会上公开榜");
-        }
+        // 保留 run id，重跑鉴定才能覆盖同一场而不是再插一条
       }
     }
+    } catch (e) {
+      if (stopRef.current || (e instanceof DOMException && e.name === "AbortError")) {
+        append("已停止");
+      } else {
+        append(`测评中断：${e instanceof Error ? e.message : String(e)}`);
+      }
+    } finally {
     resetLive();
     setRunning(false);
     patchLive({ running: false });
     setStatus(stopRef.current || leftover.length ? "未完成，可续测" : "完成");
     append("全部结束");
+    }
   }
 
   function exportJson() {
@@ -1423,6 +1470,16 @@ function Home() {
                 {draft && missingJobs(results, Object.keys(results)).length ? "续测" : "重测失败题"}
               </button>
             ) : null}
+            {!running && Object.keys(results).length ? (
+              <button
+                type="button"
+                onClick={() => void run({ retryProbe: true })}
+                title="覆盖知识截止 / juice / 自称 / 联网嫌疑。IQ、卷面、鹈鹕不改。同一场本机和公开榜鉴定字段会被换成这次的。"
+                className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-border px-2 text-sm font-medium transition-colors hover:border-primary sm:w-auto sm:px-4"
+              >
+                重跑鉴定
+              </button>
+            ) : null}
             {!running && lowScoreJobs(results, Object.keys(results)).length ? (
               <button
                 type="button"
@@ -1438,7 +1495,11 @@ function Home() {
                 onClick={() => {
                   stopRef.current = true;
                   abortRef.current?.abort();
-                  append("停止请求已发出");
+                  resetLive();
+                  setRunning(false);
+                  patchLive({ running: false });
+                  setStatus("已停止");
+                  append("已停止");
                 }}
                 className="inline-flex h-11 min-w-0 w-full items-center justify-center gap-2 rounded-lg border border-bad/50 px-2 text-sm text-bad transition-colors hover:border-bad sm:w-auto sm:px-4"
               >

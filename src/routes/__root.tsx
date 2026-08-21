@@ -6,7 +6,8 @@ import appCss from "../styles.css?url";
 
 const APP_NAME = "猛蹬·145";
 const host = import.meta.env.VITE_PUBLIC_HOSTNAME;
-const ogImage = host ? `https://${host}/og.png` : "/og.png";
+const ogImage = host ? `https://${host}/og.jpg` : undefined;
+const xBanner = host ? `https://${host}/x-banner.jpg` : undefined;
 
 export const Route = createRootRoute({
   head: () => ({
@@ -19,15 +20,29 @@ export const Route = createRootRoute({
       { name: "x5-orientation", content: "portrait" },
       { name: "screen-orientation", content: "portrait" },
       { title: APP_NAME },
-      { name: "description", content: "猛蹬·145 · 我就看智商能低到什么程度" },
+      { name: "description", content: "猛蹬·145 · 我就看智商能低到什么程度 · IQ bench for OpenAI-compatible APIs. 100 = half right." },
       { name: "apple-mobile-web-app-title", content: APP_NAME },
       { name: "theme-color", content: "#16130e" },
       { name: "twitter:card", content: "summary_large_image" },
-      { property: "og:title", content: APP_NAME },
-      { property: "og:description", content: "我就看智商能低到什么程度" },
-      { property: "og:image", content: ogImage },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
+      { name: "twitter:title", content: "猛蹬·145 · Mengdeng 145" },
+      { name: "twitter:description", content: "How low can model IQ go? Paste an OpenAI-compatible key. Pelican on a bike. No key stored." },
+      { property: "og:title", content: "猛蹬·145 · Mengdeng 145" },
+      { property: "og:description", content: "我就看智商能低到什么程度 · IQ bench, 100 = half right, max 145." },
+      ...(ogImage
+        ? [
+            { name: "twitter:image", content: ogImage },
+            { property: "og:image", content: ogImage },
+            { property: "og:image:width", content: "1200" },
+            { property: "og:image:height", content: "630" },
+          ]
+        : []),
+      ...(xBanner
+        ? [
+            { property: "x:game:image", content: xBanner },
+            { property: "x:game:image:width", content: "1200" },
+            { property: "x:game:image:height", content: "264" },
+          ]
+        : []),
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

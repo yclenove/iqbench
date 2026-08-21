@@ -4,7 +4,7 @@ import type { SvgCraft } from "./svg-craft";
 
 export const BENCH_VER = 7;
 const LS_RUNS = "iqbench_runs_v7";
-const MAX_RUNS = 80;
+const MAX_RUNS = 24;
 
 export type ItemSnap = {
   ok: boolean;
@@ -226,10 +226,10 @@ export function compactResults(
           tags: it.tags,
           seconds: it.seconds,
           detail: (it.detail || "").slice(0, 240),
-          preview: (it.preview || "").slice(0, 2500) || undefined,
-          trace: (it.trace || "").slice(0, 1200) || undefined,
-          svg: (it.svg || "").slice(0, 80000) || undefined,
-          html: (it.html || "").slice(0, 80000) || undefined,
+          preview: (it.preview || "").slice(0, 1200) || undefined,
+          trace: (it.trace || "").slice(0, 800) || undefined,
+          svg: qid.startsWith("Q16") ? (it.svg || "").slice(0, 48000) || undefined : undefined,
+          html: qid.startsWith("Q16") ? (it.html || "").slice(0, 48000) || undefined : undefined,
           craft: it.craft,
         },
       ]),
@@ -274,24 +274,89 @@ export function recomputeLocalIqs() {
     ...r,
     models: r.models.map((m) => ({ ...m, iq: modelIq(m.items || {}).iq })),
   }));
-  try {
-    localStorage.setItem(LS_RUNS, JSON.stringify(next.slice(0, MAX_RUNS)));
-  } catch {
-    /* ignore */
-  }
+  writeRuns(next.slice(0, MAX_RUNS));
   return next;
+}
+
+function slimItem(it: ItemSnap, keepArt: boolean): ItemSnap {
+  return {
+    ...it,
+    preview: keepArt ? it.preview?.slice(0, 400) : undefined,
+    trace: it.trace?.slice(0, keepArt ? 400 : 160) || undefined,
+    svg: keepArt ? it.svg?.slice(0, 24000) : undefined,
+    html: keepArt ? it.html?.slice(0, 24000) : undefined,
+  };
+}
+
+function slimRun(run: BenchRun, keepArt: boolean): BenchRun {
+  return {
+    ...run,
+    models: run.models.map((m) => ({
+      ...m,
+      probeProgress: undefined,
+      items: Object.fromEntries(
+        Object.entries(m.items || {}).map(([id, it]) => [
+          id,
+          slimItem(it, keepArt && id.startsWith("Q16")),
+        ]),
+      ),
+    })),
+  };
+}
+
+function writeRuns(list: BenchRun[]) {
+  let next = list.slice(0, MAX_RUNS);
+  for (let pass = 0; pass < 6; pass++) {
+    try {
+      localStorage.setItem(LS_RUNS, JSON.stringify(next));
+      return true;
+    } catch {
+      if (pass === 0) next = next.map((r, i) => slimRun(r, i === 0));
+      else if (pass === 1) {
+        try {
+          localStorage.removeItem("iqbench_draft_v7");
+        } catch {
+          /* ignore */
+        }
+        next = next.slice(0, 12).map((r, i) => slimRun(r, i === 0));
+      } else if (pass === 2) next = next.slice(0, 6).map((r) => slimRun(r, false));
+      else if (pass === 3) next = next.slice(0, 2).map((r) => slimRun(r, false));
+      else if (pass === 4) {
+        try {
+          localStorage.removeItem("iqbench_runs_v6");
+          localStorage.removeItem("iqbench_runs_v5");
+          localStorage.removeItem("iqbench_runs_v4");
+        } catch {
+          /* ignore */
+        }
+        next = next.slice(0, 1).map((r) => slimRun(r, false));
+      } else {
+        try {
+          localStorage.removeItem(LS_RUNS);
+        } catch {
+          /* ignore */
+        }
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 export function saveRun(run: BenchRun) {
   if (!run.models.length || run.benchVer !== BENCH_VER) return;
-  const prev = loadRuns().filter((r) => r.id !== run.id);
-  localStorage.setItem(LS_RUNS, JSON.stringify([run, ...prev].slice(0, MAX_RUNS)));
+  try {
+    const prev = loadRuns().filter((r) => r.id !== run.id);
+    writeRuns([run, ...prev]);
+  } catch {
+    /* quota: 测评不能因本机存分失败而中断 */
+  }
 }
 
 export function deleteRun(id: string) {
   try {
     const next = loadRuns().filter((r) => r.id !== id);
-    localStorage.setItem(LS_RUNS, JSON.stringify(next));
+    writeRuns(next);
     return next;
   } catch {
     return loadRuns();

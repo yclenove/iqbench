@@ -46,10 +46,16 @@ export function responsesPayloadVariants(
   const rest = messages.filter((m) => m.role !== "system");
   const asString =
     rest.length === 1 && rest[0]?.role === "user" ? rest[0].content : rest.map((m) => ({ role: m.role, content: m.content }));
-  const reason = effort && effort !== "none" ? { reasoning: { effort } } : {};
+  const reason =
+    effort && effort !== "none"
+      ? { reasoning: { effort, summary: "auto" as const } }
+      : {};
   return [
     responsesPayload(model, messages, cap, reason),
     responsesPayload(model, messages, cap, { ...reason, input: asString }),
+    responsesPayload(model, messages, cap, {
+      reasoning: { effort: effort && effort !== "none" ? effort : "high", summary: "detailed" },
+    }),
   ];
 }
 
@@ -110,8 +116,9 @@ function emitBlock(
   block: string,
   ctl: TransformStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
-  state: { content: string; reasoning: string },
+  state: { content: string; reasoning: string; done?: boolean },
 ) {
+  if (state.done) return;
   const dataLines = block.split(/\n/).filter((l) => l.startsWith("data:"));
   const payloads = dataLines.length
     ? dataLines.map((l) => l.slice(5).trim())
@@ -128,7 +135,7 @@ function emitBlock(
     }
     const type = String(obj.type || "");
     const piece = pieceOf(obj);
-    if (type.includes("reasoning") && piece) {
+    if (type.includes("reasoning") && piece && !/\.(done|added)$/.test(type)) {
       state.reasoning += piece;
       ctl.enqueue(encoder.encode(chatChunk({ reasoning_content: piece })));
     } else if (
@@ -164,6 +171,12 @@ function emitBlock(
       } else {
         ctl.enqueue(encoder.encode(chatChunk({}, type === "response.incomplete" ? "length" : "stop")));
         ctl.enqueue(encoder.encode("data: [DONE]\n\n"));
+        state.done = true;
+        try {
+          ctl.terminate();
+        } catch {
+          /* already closed */
+        }
       }
     }
   }
@@ -173,16 +186,18 @@ export function responsesSseToChat(upstream: ReadableStream<Uint8Array>) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buf = "";
-  const state = { content: "", reasoning: "" };
+  const state = { content: "", reasoning: "", done: false };
   return upstream.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, ctl) {
+        if (state.done) return;
         buf += decoder.decode(chunk, { stream: true });
         const parts = buf.split(/\n\n/);
         buf = parts.pop() ?? "";
         for (const block of parts) emitBlock(block, ctl, encoder, state);
       },
       flush(ctl) {
+        if (state.done) return;
         if (buf.trim()) emitBlock(buf, ctl, encoder, state);
       },
     }),

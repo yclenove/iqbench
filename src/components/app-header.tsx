@@ -48,7 +48,7 @@ export function AppHeader({ page }: { page: "home" | "board" | "status" | "galle
               猛蹬·<span className="font-serif">145</span>
             </p>
             <p className="mt-1 hidden font-mono text-[10px] tracking-[0.2em] text-faint uppercase sm:block">
-              {live.running ? "测评还在跑 · 切页不会停" : "IQBench · bench v7"}
+              {live.running ? "测评还在跑 · 切页不会停" : "Mengdeng 145 · IQBench v7"}
             </p>
           </div>
           <nav className="ml-4 hidden items-end gap-4 sm:flex">
