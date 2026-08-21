@@ -1,13 +1,15 @@
+import { LINUX_DO_CLIENT_ID, LINUX_DO_CLIENT_SECRET } from "@/lib/linuxdo.creds";
+
 const AUTH = "https://connect.linux.do/oauth2/authorize";
 const TOKEN = "https://connect.linux.do/oauth2/token";
 const USER = "https://connect.linux.do/api/user";
 
 function clientId() {
-  return (process.env.LINUX_DO_CLIENT_ID || "").trim();
+  return (process.env.LINUX_DO_CLIENT_ID || LINUX_DO_CLIENT_ID).trim();
 }
 
 function clientSecret() {
-  return (process.env.LINUX_DO_CLIENT_SECRET || "").trim();
+  return (process.env.LINUX_DO_CLIENT_SECRET || LINUX_DO_CLIENT_SECRET).trim();
 }
 
 export function linuxdoConfigured() {

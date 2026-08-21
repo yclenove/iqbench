@@ -160,9 +160,15 @@ export default defineConfig(({ command, mode }) => {
     strictPort: true,
   },
   define: {
-    "process.env.LINUX_DO_CLIENT_ID": JSON.stringify(linux.id),
-    "process.env.LINUX_DO_CLIENT_SECRET": JSON.stringify(linux.secret),
-    "process.env.IQBENCH_ADMINS": JSON.stringify(linux.admins),
+    ...(linux.id
+      ? { "process.env.LINUX_DO_CLIENT_ID": JSON.stringify(linux.id) }
+      : {}),
+    ...(linux.secret
+      ? { "process.env.LINUX_DO_CLIENT_SECRET": JSON.stringify(linux.secret) }
+      : {}),
+    ...(linux.admins
+      ? { "process.env.IQBENCH_ADMINS": JSON.stringify(linux.admins) }
+      : {}),
   },
   resolve: { tsconfigPaths: true },
   plugins: [

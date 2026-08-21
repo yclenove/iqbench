@@ -1,6 +1,8 @@
-/** 管理员名单只来自环境变量 IQBENCH_ADMINS（逗号分隔：用户名 / 邮箱 / user id）。仓库不写死任何人。 */
+import { IQBENCH_ADMINS } from "@/lib/linuxdo.creds";
+
+/** 管理员：环境变量优先，否则用站点回退名单。 */
 export function adminList() {
-  return (process.env.IQBENCH_ADMINS || "")
+  return (process.env.IQBENCH_ADMINS || IQBENCH_ADMINS)
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
